@@ -209,10 +209,42 @@ def readline_from_serial(ser: serial.Serial) -> str:
 
 def main():
     import sys
-    assert len(sys.argv) == 2, 'Please specify the serial port'
-    serial_port = sys.argv[1]
+    if len(sys.argv) > 1:
+        assert len(sys.argv) == 2, 'Expected only one argument'
+        serial_port = sys.argv[1]
+    else:
+        serial_port = find_serial_port()
 
     start_tftp_boot_via_serial(serial_port, local_ip, '192.168.1.1')
+
+
+def test_serial_port(potential_serial_port):
+    serial.Serial(port=potential_serial_port, baudrate=115200, timeout=45)
+    return potential_serial_port
+
+
+def find_serial_port():
+    common_serial_ports = [
+        '/dev/ttyUSB1',
+        '/dev/ttyUSB0',
+        'COM4',
+        'COM3',
+        'COM2',
+        'COM1'  # COM1 needs to be last as it usually always exists
+    ]
+    for potential_serial_port in common_serial_ports:
+        try:
+            test_serial_port(potential_serial_port)
+            return potential_serial_port
+        except serial.serialutil.SerialException as e:
+            if (
+                    'FileNotFoundError' in str(e)  # Windows
+                    or 'No such file or directory' in str(e)  # Linux: [Errno 2] No such file or directory: '/dev/tty..'
+            ):
+                print(f"Failed to access {potential_serial_port}.")
+                continue
+            raise
+    raise RuntimeError(f"No valid accessible port found in {common_serial_ports}")
 
 
 if __name__ == '__main__':
