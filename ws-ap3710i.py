@@ -16,15 +16,20 @@
 #
 # SPDX-License-Identifier: GPL-3.0-only
 import re
-import time
-
 import serial
+import tempfile
+import tftpy
+import time
+from threading import Event
+from threading import Thread
 
 # TODO: replace these with arguments (using argparse)
 local_ip = "192.168.0.25"
+initramfs_path = r"C:\Users\Guest\Downloads\openwrt-22.03.3-mpc85xx-p1020-enterasys_ws-ap3710i-initramfs-kernel.bin"
 
 tftp_file = b'01C8A8C0.img'  # Only change this if you know what you are doing
 DEBUG = True
+event_keep_serial_active = Event()
 
 
 def debug_serial(string: str):
@@ -33,7 +38,7 @@ def debug_serial(string: str):
 
 
 def bootup_interrupt(ser: serial.Serial):
-    while True:
+    while event_keep_serial_active.is_set():
         line = readline_from_serial(ser)
 
         # These lines probably only works with custom Enterasys U-Boot v2009.11.10
@@ -52,7 +57,7 @@ def bootup_interrupt(ser: serial.Serial):
 
 
 def bootup_login(ser: serial.Serial):
-    while True:
+    while event_keep_serial_active.is_set():
         line = readline_from_serial(ser)
 
         if "[30s timeout]" in line:
@@ -72,7 +77,7 @@ def bootup_login(ser: serial.Serial):
 def bootup_login_verification(ser: serial.Serial):
     prompt_string = "Boot (PRI)->"
     # Reading byte by byte because there is no linebreak after the prompt
-    while True:
+    while event_keep_serial_active.is_set():
         # only read chars if there are enough bytes in wait from the buffer
         if ser.in_waiting > len(prompt_string):
             chars = ser.read(ser.in_waiting).decode('ascii')
@@ -88,6 +93,8 @@ def bootup_login_verification(ser: serial.Serial):
 
 
 def bootup_set_boot_openwrt(ser: serial.Serial):
+    if not event_keep_serial_active.is_set():
+        return
     ser.write(b'printenv\n')
     time.sleep(1)
     printenv_return = ser.read(ser.in_waiting).decode('ascii')
@@ -137,7 +144,7 @@ def boot_via_tftp(ser: serial.Serial,
     write_to_serial(ser, b'tftpboot 0x1000000 ' + tftp_ip_str + b':' + tftp_file + b'; bootm\n')
     max_retries = 2
     cur_retries = 0
-    while True:
+    while event_keep_serial_active.is_set():
         line = readline_from_serial(ser)
 
         if "Retry count exceeded" in line:  # TFTP boot failed
@@ -175,6 +182,7 @@ def start_tftp_boot_via_serial(name: str,
                                new_ap_ip: str):
     with serial.Serial(port=name, baudrate=115200, timeout=30) as ser:
         print(f"Starting to connect to serial port {ser.name}")
+        event_keep_serial_active.set()
 
         bootup_interrupt(ser)
         bootup_login(ser)
@@ -207,7 +215,21 @@ def readline_from_serial(ser: serial.Serial) -> str:
     return line
 
 
+def start_tftp_server(tftp_dir: str, initramfs_filepath: str, ip: str = '0.0.0.0', port: int = 69) -> tftpy.TftpServer:
+    import shutil
+    import os.path
+    shutil.copyfile(initramfs_filepath, os.path.join(tftp_dir, tftp_file.decode('ascii')))
+
+    print(f"Starting tftp server on {ip}:{port} using {tftp_dir}")
+    tftp_server = tftpy.TftpServer(tftp_dir)
+    print(f"Files in ${tftp_dir}: {os.listdir(tftp_dir)}")
+    tftp_thread = Thread(target=tftp_server.listen, args=[ip, port])
+    tftp_thread.start()
+    return tftp_server
+
+
 def main():
+    tmpdir = tempfile.TemporaryDirectory()  # automatically cleaned up after process termination
     import sys
     if len(sys.argv) > 1:
         assert len(sys.argv) == 2, 'Expected only one argument'
@@ -215,8 +237,26 @@ def main():
     else:
         serial_port = find_serial_port()
 
-    start_tftp_boot_via_serial(serial_port, local_ip, '192.168.1.1')
+    tftp_server = start_tftp_server(tmpdir.name, initramfs_path, ip=local_ip)
+    serial_thread = None
+    try:
+        serial_thread = Thread(target=start_tftp_boot_via_serial,
+                               args=[serial_port, local_ip, '192.168.1.1'],
+                               daemon=True)
+        print("Starting serial thread")
+        serial_thread.start()
 
+        print("Waiting for serial thread")
+        # Strange workaround to allow ctrl+c or system stop events during a join()
+        while serial_thread.is_alive():
+            serial_thread.join(5)
+
+        print("Booting via TFTP. Give the AP some time to reboot and then access it on http://192.168.1.1")
+    except (KeyboardInterrupt, SystemExit, SystemError):
+        print("Aborting main process")
+    finally:
+        event_keep_serial_active.clear()
+        tftp_server.stop()
 
 def test_serial_port(potential_serial_port):
     serial.Serial(port=potential_serial_port, baudrate=115200, timeout=45)

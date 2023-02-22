@@ -15,7 +15,18 @@ files = [
 [package.extras]
 cp2110 = ["hidapi"]
 
+[[package]]
+name = "tftpy"
+version = "0.8.2"
+description = "Python TFTP library"
+category = "main"
+optional = false
+python-versions = ">=2.7"
+files = [
+    {file = "tftpy-0.8.2.tar.gz", hash = "sha256:e1d1a680efd88eba176b351175844253067392a9b0f8b81588e3ff2b9e7bbb5b"},
+]
+
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.6"
-content-hash = "4f58348d79c7cfc209cfebdb6e2aafab966a70de71a3f57309362d23343b978b"
+content-hash = "4790ef5159650ddd6e8a786adee0581c9350269cb5ef64d4ced7b608d1f9590a"

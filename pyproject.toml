@@ -9,6 +9,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.6"
 pyserial = "^3.5"
+tftpy = "^0.8.2"
 
 
 [build-system]
