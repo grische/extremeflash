@@ -15,6 +15,7 @@
 #     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 # SPDX-License-Identifier: GPL-3.0-only
+import logging
 import paramiko
 import re
 import serial
@@ -25,7 +26,7 @@ from threading import Event
 from threading import Thread
 
 # TODO: replace these with arguments (using argparse)
-DEBUG = True
+LOGLEVEL = logging.DEBUG
 DRYRUN = True
 local_ip = "192.168.0.25"
 initramfs_path = r"C:\Users\Guest\Downloads\openwrt-22.03.3-mpc85xx-p1020-enterasys_ws-ap3710i-initramfs-kernel.bin"
@@ -61,8 +62,7 @@ event_ssh_ready = Event()
 
 
 def debug_serial(string: str):
-    if DEBUG:
-        print("DEBUG: " + string.rstrip())
+    logging.debug(string.rstrip())
 
 
 def bootup_interrupt(ser: serial.Serial):
@@ -76,7 +76,7 @@ def bootup_interrupt(ser: serial.Serial):
                 or "### JFFS2 LOAD ERROR" in line  # OpenWRT message :-|
         ):
             text = b"x"  # send interrupt key
-            print(f"JFFS2 load done. Sending interrupt key {text}.")
+            logging.info(f"JFFS2 load done. Sending interrupt key {text}.")
             time.sleep(0.5)  # sleep 500ms
             ser.write(text)
             break
@@ -90,13 +90,13 @@ def bootup_login(ser: serial.Serial):
 
         if "[30s timeout]" in line:
             time.sleep(0.1)
-            print(f"Attempting to log in.")
+            logging.info(f"Attempting to log in.")
             ser.write(b"admin\n")
             time.sleep(0.1)
             ser.write(b"new2day\n")
         elif "password: new2day" in line:
             time.sleep(0.1)  # sleep 500ms
-            print(f"Checking if login was successful.")
+            logging.info(f"Checking if login was successful.")
             break
 
         time.sleep(0.01)
@@ -112,7 +112,7 @@ def bootup_login_verification(ser: serial.Serial):
             debug_serial(chars)
 
             if prompt_string in chars:
-                print(f"U-Boot login successful!")
+                logging.info(f"U-Boot login successful!")
                 break
             else:
                 raise RuntimeError("U-Boot login failed :((")
@@ -129,7 +129,7 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
     debug_serial(printenv_return)
     boot_openwrt_params = b'setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000'
     if "boot_openwrt" in printenv_return:
-        print("Found existing U-Boot boot_openwrt parameter. Verifying.")
+        logging.debug("Found existing U-Boot boot_openwrt parameter. Verifying.")
         existing_boot_openwrt_params = re.search(r'boot_openwrt=(.*)\r\n', printenv_return).group(1)
         if boot_openwrt_params.decode('ascii') != existing_boot_openwrt_params:
             error_message = f'''
@@ -139,10 +139,10 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
                 '''
             raise RuntimeError(error_message)
 
-        print("Existing U-Boot boot_openwrt parameter looks good.")
+        logging.debug("Existing U-Boot boot_openwrt parameter looks good.")
 
     else:
-        print("Did not find boot_openwrt in U-Boot parameters. Setting it.")
+        logging.info("Did not find boot_openwrt in U-Boot parameters. Setting it.")
         write_to_serial(ser, b'setenv boot_openwrt "' + boot_openwrt_params + b'"\n')
         time.sleep(0.5)
 
@@ -150,7 +150,7 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
         time.sleep(0.5)
 
         if DRYRUN:
-            print("dryrun: Skipping saveenv")
+            logging.info("dryrun: Skipping saveenv")
             return
 
         ser.write(b'saveenv\n')
@@ -172,7 +172,7 @@ def boot_via_tftp(ser: serial.Serial,
     write_to_serial(ser, b'setenv netmask 255.255.255.0\n')
     write_to_serial(ser, b'setenv serverip ' + tftp_ip_str + b'\n')
     write_to_serial(ser, b'setenv gatewayip ' + tftp_ip_str + b'\n')
-    print("Starting TFTP Boot.")
+    logging.info("Starting TFTP Boot.")
     write_to_serial(ser, b'tftpboot 0x1000000 ' + tftp_ip_str + b':' + tftp_file + b'; bootm\n')
     max_retries = 2
     cur_retries = 0
@@ -181,7 +181,7 @@ def boot_via_tftp(ser: serial.Serial,
 
         if "Retry count exceeded" in line:  # TFTP boot failed
             # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/net/tftp.c#L704
-            print(f"Failed booting from TFTP (attempt #{cur_retries}): {line}")
+            logging.warning(f"Failed booting from TFTP (attempt #{cur_retries}): {line}")
             cur_retries = cur_retries + 1
             if cur_retries > max_retries:
                 write_to_serial(ser, b'\x03')
@@ -189,11 +189,11 @@ def boot_via_tftp(ser: serial.Serial,
 
         elif "Wrong Image Format for bootm command" in line:
             # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/bootm.c#L974
-            print("TFTP boot found wrong image format")
+            logging.error("TFTP boot found wrong image format")
 
         elif "ERROR: can't get kernel image!" in line:
             # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/bootm.c#L123
-            print(f"Unable to boot initramfs file. Check you provided the correct file. Aborting.")
+            logging.error(f"Unable to boot initramfs file. Check you provided the correct file. Aborting.")
             import os
             os._exit(1)
 
@@ -218,7 +218,7 @@ def boot_wait_for_brlan(ser: serial.Serial):
         line = readline_from_serial(ser)
 
         if "br-lan: link becomes ready" in line:
-            print("br-lan is ready.")
+            logging.info("br-lan is ready.")
             time.sleep(2)  # sometimes br-lan is ready but the default IP is still not reachable
             break
 
@@ -230,9 +230,9 @@ def keep_logging_until_reboot(ser: serial.Serial):
         if ser.in_waiting > 5:
             line = readline_from_serial(ser)
             if "Upgrade completed" in line:
-                print("Flashing successful.")
+                logging.info("Flashing successful.")
             elif "reboot: Restarting system" in line:
-                print("Reboot detected. Stopping serial connection.")
+                logging.info("Reboot detected. Stopping serial connection.")
                 break
 
         time.sleep(0.05)
@@ -242,7 +242,7 @@ def start_tftp_boot_via_serial(name: str,
                                tftp_ip: str,
                                new_ap_ip: str):
     with serial.Serial(port=name, baudrate=115200, timeout=30) as ser:
-        print(f"Starting to connect to serial port {ser.name}")
+        logging.info(f"Starting to connect to serial port {ser.name}")
         event_keep_serial_active.set()
 
         bootup_interrupt(ser)
@@ -284,9 +284,9 @@ def start_tftp_server(tftp_dir: str, initramfs_filepath: str, ip: str = '0.0.0.0
     import os.path
     shutil.copyfile(initramfs_filepath, os.path.join(tftp_dir, tftp_file.decode('ascii')))
 
-    print(f"Starting tftp server on {ip}:{port} using {tftp_dir}")
+    logging.info(f"Starting tftp server on {ip}:{port} using {tftp_dir}")
     tftp_server = tftpy.TftpServer(tftp_dir)
-    print(f"Files in ${tftp_dir}: {os.listdir(tftp_dir)}")
+    logging.debug(f"Files in ${tftp_dir}: {os.listdir(tftp_dir)}")
     tftp_thread = Thread(target=tftp_server.listen, args=[ip, port])
     tftp_thread.start()
     return tftp_server
@@ -294,11 +294,11 @@ def start_tftp_server(tftp_dir: str, initramfs_filepath: str, ip: str = '0.0.0.0
 
 def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = '192.168.1.1'):
     import scp
-    print("SSH waiting for ready signal.")
+    logging.info("SSH waiting for ready signal.")
     event_ssh_ready.wait()
     if event_abort_ssh.is_set():
         return
-    print("SSH Starting")
+    logging.info("SSH Starting")
     paramiko.util.log_to_file('paramiko.log')
     with paramiko.Transport(ap_ip) as transport:
         transport.connect()  # ignoring all security
@@ -313,40 +313,44 @@ def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = '192.168.1.1'):
         with transport.open_session() as chan:
             sysupgrade_command = "sysupgrade -n " + firmware_target_path
             if DRYRUN:
-                print("dryrun: running sysupgrade with test and rebooting")
+                logging.info("dryrun: running sysupgrade with test and rebooting")
                 sysupgrade_command = sysupgrade_command.replace('sysupgrade', 'sysupgrade --test')
                 sysupgrade_command = sysupgrade_command + " && reboot"
-            print(f"Running remote: {sysupgrade_command}")
+            logging.debug(f"Running remote: {sysupgrade_command}")
             stdout = chan.makefile('r')
             stderr = chan.makefile_stderr('r')
 
             chan.exec_command(sysupgrade_command)
             sysupgrade_stdout = stdout.read().decode()
             sysupgrade_stderr = stderr.read().decode()
-            print("sysupgrade stdout: " + sysupgrade_stdout)
-            print("sysupgrade stderr: " + sysupgrade_stderr)
+            logging.debug("sysupgrade stdout: " + sysupgrade_stdout)
+            logging.debug("sysupgrade stderr: " + sysupgrade_stderr)
 
             # sysupgrade prints to stderr by default
             if "Commencing upgrade" in sysupgrade_stderr:
-                print("Flashing in progress...")
-        print("Closing SSH session.")
+                logging.info("Flashing in progress...")
+        logging.debug("Closing SSH session.")
 
 
 def post_cleanup(tftp_server, ssh_thread, serial_thread):
     if ssh_thread and ssh_thread.is_alive():
-        print("Stopping SSH thread")
+        logging.info("Stopping SSH thread")
         event_abort_ssh.set()
         event_ssh_ready.set()
     if serial_thread and serial_thread.is_alive():
-        print("Stopping Serial thread")
+        logging.info("Stopping Serial thread")
         event_keep_serial_active.clear()
 
-    print("Stopping TFTP server.")
+    logging.debug("Stopping TFTP server.")
     tftp_server.stop()  # set now=True to force shutdown
 
 
 def main():
     tmpdir = tempfile.TemporaryDirectory()  # automatically cleaned up after process termination
+    logging.basicConfig(level=LOGLEVEL)
+    logging.getLogger('tftpy').setLevel(logging.WARN if logging.WARN > LOGLEVEL else LOGLEVEL)  # tftpy is very spammy
+    logging.getLogger('paramiko.transport').setLevel(logging.INFO if logging.INFO > LOGLEVEL else LOGLEVEL)
+
     import sys
     if len(sys.argv) > 1:
         assert len(sys.argv) == 2, 'Expected only one argument'
@@ -362,24 +366,24 @@ def main():
                                args=[serial_port, local_ip, '192.168.1.1'],
                                daemon=True)
         ssh_thread = Thread(target=start_ssh, args=[sysupgrade_path, '192.168.1.1'])
-        print("Starting serial thread")
+        logging.debug("Starting serial thread")
         serial_thread.start()
-        print("Starting ssh thread")
+        logging.debug("Starting ssh thread")
         ssh_thread.start()
 
-        print("Waiting for ssh thread")
+        logging.debug("Waiting for ssh thread")
         # Strange workaround to allow ctrl+c or system stop events during a join()
         while ssh_thread.is_alive():
             ssh_thread.join(5)  # wait for SSH to conclude its actions
 
-        print("Waiting for serial thread")
+        logging.debug("Waiting for serial thread")
         # Strange workaround to allow ctrl+c or system stop events during a join()
         while serial_thread.is_alive():
             serial_thread.join(5)
 
-        print("Booting via TFTP. Give the AP some time to reboot and then access it on http://192.168.1.1")
+        logging.info("All steps finished. Give the AP some time to reboot and then access it on http://192.168.1.1")
     except (KeyboardInterrupt, SystemExit, SystemError):
-        print("Aborting main process")
+        logging.warning("Aborting main process")
     finally:
         post_cleanup(tftp_server, ssh_thread, serial_thread)
 
@@ -406,7 +410,7 @@ def find_serial_port():
                     'FileNotFoundError' in str(e)  # Windows
                     or 'No such file or directory' in str(e)  # Linux: [Errno 2] No such file or directory: '/dev/tty..'
             ):
-                print(f"Failed to access {potential_serial_port}.")
+                logging.debug(f"Failed to access {potential_serial_port}.")
                 continue
             raise
     raise RuntimeError(f"No valid accessible port found in {common_serial_ports}")
