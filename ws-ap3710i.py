@@ -15,6 +15,7 @@
 #     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 # SPDX-License-Identifier: GPL-3.0-only
+import paramiko
 import re
 import serial
 import tempfile
@@ -24,12 +25,39 @@ from threading import Event
 from threading import Thread
 
 # TODO: replace these with arguments (using argparse)
+DEBUG = True
+DRYRUN = True
 local_ip = "192.168.0.25"
 initramfs_path = r"C:\Users\Guest\Downloads\openwrt-22.03.3-mpc85xx-p1020-enterasys_ws-ap3710i-initramfs-kernel.bin"
+sysupgrade_path = r"C:\Users\Guest\Downloads\openwrt-22.03.3-mpc85xx-p1020-enterasys_ws-ap3710i-squashfs-sysupgrade.bin"
 
 tftp_file = b'01C8A8C0.img'  # Only change this if you know what you are doing
-DEBUG = True
+#
+#  What this tool actually does
+#
+# 1. It will start a "TFTP server thread" on the `local_ip` on port `69`.
+# 2. Starting a "serial thread" to watch and interact with the serial console.
+#    First, it will interrupt the U-Boot boot process, set boot parameters for TFTP and execute the TFTP boot using
+#    the initramfs-kernel.bin file.
+# 3. Once the serial thread identified that the TFTP boot succeeded, an "SSH Thread" will establish an SSH connection
+#    and upload the sysupgrade.bin file, run sysupgrade to install it and then terminate
+# 4. In the meanwhile, the "serial thread" will watch for a message that flashing was successful and that the reboot was
+#    initiated and then terminate.
+# 5. In the meanwhile the main programm will wait for SSH and Serial threads to terminate and then stop the TFTP server
+#
+# Main Thread: .....................................................................................................
+# |  |  |                                                                                           (join) /     |  \
+# \  \  \_ SSH Thread: halt ....................................... resume: upload file + flash it + terminate   |   \
+#  \  \                                                        (event) /                                 (join) /     \
+#   \  \_ Serial Thread: Interrupt U-Boot .. Boot TFTP .. Wait for br-lan .. Wait for flash + reboot .. terminate      |
+#    \                                                                                                          (stop) |
+#     \_ TFTP Server Thread: ................................................................................. terminate
+
+
+# TODO: these global events might need a better location
 event_keep_serial_active = Event()
+event_abort_ssh = Event()
+event_ssh_ready = Event()
 
 
 def debug_serial(string: str):
@@ -121,6 +149,10 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
         write_to_serial(ser, b'setenv bootcmd "run boot_openwrt"\n')
         time.sleep(0.5)
 
+        if DRYRUN:
+            print("dryrun: Skipping saveenv")
+            return
+
         ser.write(b'saveenv\n')
         time.sleep(2)
         saveenv_return = ser.read(ser.in_waiting).decode('ascii')
@@ -177,6 +209,35 @@ def boot_via_tftp(ser: serial.Serial,
         time.sleep(0.01)
 
 
+def boot_wait_for_brlan(ser: serial.Serial):
+    # The "eth0: Link is Up" comes up, then goes down again and then comes up again
+    # It seems that the second "up" happens after eth0 has entered promiscuous mode
+    # and after the bridge has been created
+
+    while event_keep_serial_active.is_set():
+        line = readline_from_serial(ser)
+
+        if "br-lan: link becomes ready" in line:
+            print("br-lan is ready.")
+            time.sleep(2)  # sometimes br-lan is ready but the default IP is still not reachable
+            break
+
+        time.sleep(0.1)
+
+
+def keep_logging_until_reboot(ser: serial.Serial):
+    while event_keep_serial_active.is_set():
+        if ser.in_waiting > 5:
+            line = readline_from_serial(ser)
+            if "Upgrade completed" in line:
+                print("Flashing successful.")
+            elif "reboot: Restarting system" in line:
+                print("Reboot detected. Stopping serial connection.")
+                break
+
+        time.sleep(0.05)
+
+
 def start_tftp_boot_via_serial(name: str,
                                tftp_ip: str,
                                new_ap_ip: str):
@@ -189,6 +250,9 @@ def start_tftp_boot_via_serial(name: str,
         bootup_login_verification(ser)
         bootup_set_boot_openwrt(ser)
         boot_via_tftp(ser, tftp_ip, new_ap_ip)
+        boot_wait_for_brlan(ser)
+        event_ssh_ready.set()
+        keep_logging_until_reboot(ser)
 
 
 def write_to_serial(ser: serial.Serial, text: bytes, sleep: float = 0) -> str:
@@ -228,6 +292,59 @@ def start_tftp_server(tftp_dir: str, initramfs_filepath: str, ip: str = '0.0.0.0
     return tftp_server
 
 
+def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = '192.168.1.1'):
+    import scp
+    print("SSH waiting for ready signal.")
+    event_ssh_ready.wait()
+    if event_abort_ssh.is_set():
+        return
+    print("SSH Starting")
+    paramiko.util.log_to_file('paramiko.log')
+    with paramiko.Transport(ap_ip) as transport:
+        transport.connect()  # ignoring all security
+        transport.auth_none("root")  # password-less login
+
+        firmware_target_path = '/tmp/firmware.bin'
+
+        # Basic OpenWRT only supports SCP, not SFTP
+        with scp.SCPClient(transport) as scp:
+            scp.put(sysupgrade_firmware_path, firmware_target_path)
+
+        with transport.open_session() as chan:
+            sysupgrade_command = "sysupgrade -n " + firmware_target_path
+            if DRYRUN:
+                print("dryrun: running sysupgrade with test and rebooting")
+                sysupgrade_command = sysupgrade_command.replace('sysupgrade', 'sysupgrade --test')
+                sysupgrade_command = sysupgrade_command + " && reboot"
+            print(f"Running remote: {sysupgrade_command}")
+            stdout = chan.makefile('r')
+            stderr = chan.makefile_stderr('r')
+
+            chan.exec_command(sysupgrade_command)
+            sysupgrade_stdout = stdout.read().decode()
+            sysupgrade_stderr = stderr.read().decode()
+            print("sysupgrade stdout: " + sysupgrade_stdout)
+            print("sysupgrade stderr: " + sysupgrade_stderr)
+
+            # sysupgrade prints to stderr by default
+            if "Commencing upgrade" in sysupgrade_stderr:
+                print("Flashing in progress...")
+        print("Closing SSH session.")
+
+
+def post_cleanup(tftp_server, ssh_thread, serial_thread):
+    if ssh_thread and ssh_thread.is_alive():
+        print("Stopping SSH thread")
+        event_abort_ssh.set()
+        event_ssh_ready.set()
+    if serial_thread and serial_thread.is_alive():
+        print("Stopping Serial thread")
+        event_keep_serial_active.clear()
+
+    print("Stopping TFTP server.")
+    tftp_server.stop()  # set now=True to force shutdown
+
+
 def main():
     tmpdir = tempfile.TemporaryDirectory()  # automatically cleaned up after process termination
     import sys
@@ -239,12 +356,21 @@ def main():
 
     tftp_server = start_tftp_server(tmpdir.name, initramfs_path, ip=local_ip)
     serial_thread = None
+    ssh_thread = None
     try:
         serial_thread = Thread(target=start_tftp_boot_via_serial,
                                args=[serial_port, local_ip, '192.168.1.1'],
                                daemon=True)
+        ssh_thread = Thread(target=start_ssh, args=[sysupgrade_path, '192.168.1.1'])
         print("Starting serial thread")
         serial_thread.start()
+        print("Starting ssh thread")
+        ssh_thread.start()
+
+        print("Waiting for ssh thread")
+        # Strange workaround to allow ctrl+c or system stop events during a join()
+        while ssh_thread.is_alive():
+            ssh_thread.join(5)  # wait for SSH to conclude its actions
 
         print("Waiting for serial thread")
         # Strange workaround to allow ctrl+c or system stop events during a join()
@@ -255,8 +381,7 @@ def main():
     except (KeyboardInterrupt, SystemExit, SystemError):
         print("Aborting main process")
     finally:
-        event_keep_serial_active.clear()
-        tftp_server.stop()
+        post_cleanup(tftp_server, ssh_thread, serial_thread)
 
 def test_serial_port(potential_serial_port):
     serial.Serial(port=potential_serial_port, baudrate=115200, timeout=45)
