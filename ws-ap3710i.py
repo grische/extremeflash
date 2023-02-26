@@ -15,6 +15,7 @@
 #     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 # SPDX-License-Identifier: GPL-3.0-only
+import ipaddress
 import logging
 import paramiko
 import re
@@ -28,7 +29,8 @@ from threading import Thread
 # TODO: replace these with arguments (using argparse)
 LOGLEVEL = logging.DEBUG
 DRYRUN = True
-local_ip = "192.168.0.25"
+local_ip_str = "192.168.0.25/24"
+# ap_ip_str = "192.168.0.247/24"  # optional
 initramfs_path = r"C:\Users\Guest\Downloads\openwrt-22.03.3-mpc85xx-p1020-enterasys_ws-ap3710i-initramfs-kernel.bin"
 sysupgrade_path = r"C:\Users\Guest\Downloads\openwrt-22.03.3-mpc85xx-p1020-enterasys_ws-ap3710i-squashfs-sysupgrade.bin"
 
@@ -163,13 +165,14 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
 
 
 def boot_via_tftp(ser: serial.Serial,
-                  tftp_ip: str,
-                  new_ap_ip: str):
-    new_ap_ip_str = new_ap_ip.encode('ascii')
-    tftp_ip_str = tftp_ip.encode('ascii')
+                  tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+                  new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface):
+    new_ap_ip_str = str(new_ap_ip.ip).encode('ascii')
+    new_ap_netmask_str = str(new_ap_ip.netmask).encode('ascii')
+    tftp_ip_str = str(tftp_ip.ip).encode('ascii')
 
     write_to_serial(ser, b'setenv ipaddr ' + new_ap_ip_str + b'\n')
-    write_to_serial(ser, b'setenv netmask 255.255.255.0\n')
+    write_to_serial(ser, b'setenv netmask ' + new_ap_netmask_str + b'\n')
     write_to_serial(ser, b'setenv serverip ' + tftp_ip_str + b'\n')
     write_to_serial(ser, b'setenv gatewayip ' + tftp_ip_str + b'\n')
     logging.info("Starting TFTP Boot.")
@@ -225,6 +228,17 @@ def boot_wait_for_brlan(ser: serial.Serial):
         time.sleep(0.1)
 
 
+def boot_set_ips(ser, new_ap_ip):
+    logging.info(f"Setting new AP ip to {new_ap_ip}")
+    ip_str = new_ap_ip.with_prefixlen.encode('ascii')
+
+    write_to_serial(ser, b'\n')  # login
+    write_to_serial(ser, b'ip address del 192.168.1.1 dev br-lan\n')  # remove default IP to avoid collisions
+    write_to_serial(ser, b'ip address add ' + ip_str + b' dev br-lan\n')
+    write_to_serial(ser, b'ip -4 address show\n')
+    time.sleep(0.5)
+
+
 def keep_logging_until_reboot(ser: serial.Serial):
     while event_keep_serial_active.is_set():
         if ser.in_waiting > 5:
@@ -239,8 +253,8 @@ def keep_logging_until_reboot(ser: serial.Serial):
 
 
 def start_tftp_boot_via_serial(name: str,
-                               tftp_ip: str,
-                               new_ap_ip: str):
+                               tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+                               new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface):
     with serial.Serial(port=name, baudrate=115200, timeout=30) as ser:
         logging.info(f"Starting to connect to serial port {ser.name}")
         event_keep_serial_active.set()
@@ -251,6 +265,7 @@ def start_tftp_boot_via_serial(name: str,
         bootup_set_boot_openwrt(ser)
         boot_via_tftp(ser, tftp_ip, new_ap_ip)
         boot_wait_for_brlan(ser)
+        boot_set_ips(ser, new_ap_ip)
         event_ssh_ready.set()
         keep_logging_until_reboot(ser)
 
@@ -358,14 +373,16 @@ def main():
     else:
         serial_port = find_serial_port()
 
-    tftp_server = start_tftp_server(tmpdir.name, initramfs_path, ip=local_ip)
+    ap_ip_interface, local_ip_interface = setting_up_ips()
+
+    tftp_server = start_tftp_server(tmpdir.name, initramfs_path, ip=str(local_ip_interface.ip))
     serial_thread = None
     ssh_thread = None
     try:
         serial_thread = Thread(target=start_tftp_boot_via_serial,
-                               args=[serial_port, local_ip, '192.168.1.1'],
+                               args=[serial_port, local_ip_interface, ap_ip_interface],
                                daemon=True)
-        ssh_thread = Thread(target=start_ssh, args=[sysupgrade_path, '192.168.1.1'])
+        ssh_thread = Thread(target=start_ssh, args=[sysupgrade_path, str(ap_ip_interface.ip)])
         logging.debug("Starting serial thread")
         serial_thread.start()
         logging.debug("Starting ssh thread")
@@ -386,6 +403,48 @@ def main():
         logging.warning("Aborting main process")
     finally:
         post_cleanup(tftp_server, ssh_thread, serial_thread)
+
+
+def setting_up_ips():
+    # IP management
+    local_ip_interface = ipaddress.ip_interface(local_ip_str)
+    local_ip_interface = ip_address_fix_prefix(local_ip_interface)
+    # the ap shall have one less than the broadcast address re-using the same prefix
+    ap_ip_interface = ipaddress.ip_interface(
+        f"{local_ip_interface.network.broadcast_address - 1}/{local_ip_interface.network.prefixlen}")
+
+    if 'ap_ip_str' in locals():  # TODO: remove this weirdness and use argparse instead
+        if ap_ip_str:
+            ap_ip_interface = ipaddress.ip_interface(ap_ip_str)
+            ap_ip_interface = ip_address_fix_prefix(ap_ip_interface)
+
+    if local_ip_interface.ip == ap_ip_interface.ip:
+        raise ValueError(
+            f"Local IP {local_ip_interface.with_prefixlen} and AP IP {ap_ip_interface.with_prefixlen} are identical.")
+
+    # TODO: Check that AP and Local ip can reach each other: ap_ip_str.network.overlaps(...) maybe?
+
+    return ap_ip_interface, local_ip_interface
+
+
+def ip_address_fix_prefix(ip_interface: ipaddress.IPv4Interface | ipaddress.IPv6Interface) \
+        -> ipaddress.IPv4Interface | ipaddress.IPv6Interface:
+    if ip_interface.network.prefixlen == ip_interface.network.max_prefixlen:  # probably forgot to specify network
+        if type(ip_interface) is ipaddress.IPv4Interface:
+            new_prefix = 24
+        elif type(ip_interface) is ipaddress.IPv6Interface:
+            new_prefix = 64
+        else:
+            raise ValueError(f'Invalid IP interface received {type(ip_interface)}')
+
+        logging.warning(f"Received too small network prefix {ip_interface.network.prefixlen} for {ip_interface}. "
+                        + f"Assuming {ip_interface.ip}/{new_prefix}.")
+        ip_interface = ipaddress.ip_interface(f"{ip_interface.ip}/{new_prefix}")
+    elif ip_interface.network.prefixlen == ip_interface.network.max_prefixlen - 1:  # we need at least two IPs+broadcast
+        raise ValueError(f"Too small IP prefix for {ip_interface}. Requires space for at least two IPs + broadcast.")
+
+    return ip_interface
+
 
 def test_serial_port(potential_serial_port):
     serial.Serial(port=potential_serial_port, baudrate=115200, timeout=45)
