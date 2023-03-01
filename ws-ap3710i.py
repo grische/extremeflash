@@ -18,6 +18,7 @@
 import ipaddress
 import logging
 import paramiko
+import pathlib
 import re
 import serial
 import tempfile
@@ -26,15 +27,7 @@ import time
 from threading import Event
 from threading import Thread
 
-# TODO: replace these with arguments (using argparse)
-LOGLEVEL = logging.DEBUG
-DRYRUN = True
-local_ip_str = "192.168.0.25/24"
-# ap_ip_str = "192.168.0.247/24"  # optional
-initramfs_path = r"C:\Users\Guest\Downloads\openwrt-22.03.3-mpc85xx-p1020-enterasys_ws-ap3710i-initramfs-kernel.bin"
-sysupgrade_path = r"C:\Users\Guest\Downloads\openwrt-22.03.3-mpc85xx-p1020-enterasys_ws-ap3710i-squashfs-sysupgrade.bin"
-
-tftp_file = b'01C8A8C0.img'  # Only change this if you know what you are doing
+DRYRUN = False  # can be overriden with "--dryrun" argument
 #
 #  What this tool actually does
 #
@@ -166,6 +159,7 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
 
 def boot_via_tftp(ser: serial.Serial,
                   tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+                  tftp_file: str,
                   new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface):
     new_ap_ip_str = str(new_ap_ip.ip).encode('ascii')
     new_ap_netmask_str = str(new_ap_ip.netmask).encode('ascii')
@@ -176,7 +170,7 @@ def boot_via_tftp(ser: serial.Serial,
     write_to_serial(ser, b'setenv serverip ' + tftp_ip_str + b'\n')
     write_to_serial(ser, b'setenv gatewayip ' + tftp_ip_str + b'\n')
     logging.info("Starting TFTP Boot.")
-    write_to_serial(ser, b'tftpboot 0x1000000 ' + tftp_ip_str + b':' + tftp_file + b'; bootm\n')
+    write_to_serial(ser, b'tftpboot 0x1000000 ' + tftp_ip_str + b':' + tftp_file.encode('ascii') + b'; bootm\n')
     max_retries = 2
     cur_retries = 0
     while event_keep_serial_active.is_set():
@@ -254,6 +248,7 @@ def keep_logging_until_reboot(ser: serial.Serial):
 
 def start_tftp_boot_via_serial(name: str,
                                tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+                               tftp_file: str,
                                new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface):
     with serial.Serial(port=name, baudrate=115200, timeout=30) as ser:
         logging.info(f"Starting to connect to serial port {ser.name}")
@@ -263,7 +258,7 @@ def start_tftp_boot_via_serial(name: str,
         bootup_login(ser)
         bootup_login_verification(ser)
         bootup_set_boot_openwrt(ser)
-        boot_via_tftp(ser, tftp_ip, new_ap_ip)
+        boot_via_tftp(ser, tftp_ip, tftp_file, new_ap_ip)
         boot_wait_for_brlan(ser)
         boot_set_ips(ser, new_ap_ip)
         event_ssh_ready.set()
@@ -297,7 +292,7 @@ def readline_from_serial(ser: serial.Serial) -> str:
 def start_tftp_server(tftp_dir: str, initramfs_filepath: str, ip: str = '0.0.0.0', port: int = 69) -> tftpy.TftpServer:
     import shutil
     import os.path
-    shutil.copyfile(initramfs_filepath, os.path.join(tftp_dir, tftp_file.decode('ascii')))
+    shutil.copyfile(initramfs_filepath, os.path.join(tftp_dir, initramfs_filepath.name))
 
     logging.info(f"Starting tftp server on {ip}:{port} using {tftp_dir}")
     tftp_server = tftpy.TftpServer(tftp_dir)
@@ -360,27 +355,20 @@ def post_cleanup(tftp_server, ssh_thread, serial_thread):
     tftp_server.stop()  # set now=True to force shutdown
 
 
-def main():
+def main(serial_port: str, initramfs_path: pathlib.Path, sysupgrade_path: pathlib.Path, local_ip: str,
+         ap_ip: str = None):
     tmpdir = tempfile.TemporaryDirectory()  # automatically cleaned up after process termination
-    logging.basicConfig(level=LOGLEVEL)
-    logging.getLogger('tftpy').setLevel(logging.WARN if logging.WARN > LOGLEVEL else LOGLEVEL)  # tftpy is very spammy
-    logging.getLogger('paramiko.transport').setLevel(logging.INFO if logging.INFO > LOGLEVEL else LOGLEVEL)
-
-    import sys
-    if len(sys.argv) > 1:
-        assert len(sys.argv) == 2, 'Expected only one argument'
-        serial_port = sys.argv[1]
-    else:
+    if not serial_port:
         serial_port = find_serial_port()
 
-    ap_ip_interface, local_ip_interface = setting_up_ips()
+    ap_ip_interface, local_ip_interface = setting_up_ips(local_ip, ap_ip)
 
     tftp_server = start_tftp_server(tmpdir.name, initramfs_path, ip=str(local_ip_interface.ip))
     serial_thread = None
     ssh_thread = None
     try:
         serial_thread = Thread(target=start_tftp_boot_via_serial,
-                               args=[serial_port, local_ip_interface, ap_ip_interface],
+                               args=[serial_port, local_ip_interface, initramfs_path.name, ap_ip_interface],
                                daemon=True)
         ssh_thread = Thread(target=start_ssh, args=[sysupgrade_path, str(ap_ip_interface.ip)])
         logging.debug("Starting serial thread")
@@ -405,25 +393,23 @@ def main():
         post_cleanup(tftp_server, ssh_thread, serial_thread)
 
 
-def setting_up_ips():
+def setting_up_ips(local_ip: str, ap_ip_str: str = None):
     # IP management
-    local_ip_interface = ipaddress.ip_interface(local_ip_str)
+    local_ip_interface = ipaddress.ip_interface(local_ip)
     local_ip_interface = ip_address_fix_prefix(local_ip_interface)
     # the ap shall have one less than the broadcast address re-using the same prefix
     ap_ip_interface = ipaddress.ip_interface(
         f"{local_ip_interface.network.broadcast_address - 1}/{local_ip_interface.network.prefixlen}")
 
-    if 'ap_ip_str' in locals():  # TODO: remove this weirdness and use argparse instead
-        if ap_ip_str:
-            ap_ip_interface = ipaddress.ip_interface(ap_ip_str)
-            ap_ip_interface = ip_address_fix_prefix(ap_ip_interface)
+    if ap_ip_str:
+        ap_ip_interface = ipaddress.ip_interface(ap_ip_str)
+        ap_ip_interface = ip_address_fix_prefix(ap_ip_interface)
 
     if local_ip_interface.ip == ap_ip_interface.ip:
         raise ValueError(
             f"Local IP {local_ip_interface.with_prefixlen} and AP IP {ap_ip_interface.with_prefixlen} are identical.")
 
     # TODO: Check that AP and Local ip can reach each other: ap_ip_str.network.overlaps(...) maybe?
-
     return ap_ip_interface, local_ip_interface
 
 
@@ -476,4 +462,43 @@ def find_serial_port():
 
 
 if __name__ == '__main__':
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog='ExtremeFlash',
+        description='This tool helps flashing Extreme Networks or Enterasys access points')
+
+    parser_group_force = parser.add_mutually_exclusive_group()
+    parser_group_force.add_argument('-d', '--dryrun', action='store_true',
+                                    help='Skip all steps that would make persistent changes')
+    # parser_group_force.add_argument('-f', '--force', action='store_true',
+    #                                 help='Ignore any safeguards. WARNING: This can be destructive.')
+
+    parser.add_argument('-v', '--verbose', action='store_true', help='Enable debugging output')
+    parser.add_argument('-p', '--port', action='store', type=str,
+                        help='The serial port to use to communicate with the access point', required=False)
+    parser.add_argument('-i', '--initramfs', action='store', type=pathlib.Path,
+                        help='The path to the initramfs for the access point', required=True)
+    parser.add_argument('-j', '--image', action='store', type=pathlib.Path,
+                        help='The path to the image that should be flashed on the access point', required=True)
+    parser.add_argument('--local-ip', action='store', type=ipaddress.ip_interface,
+                        help='The IP of a local interface that will run TFTP and communicate with the access point',
+                        required=True)
+    parser.add_argument('--ap-ip', action='store', type=ipaddress.ip_interface,
+                        help='The (temporary) IP of the access point to communicate with. Defaults to broadcast ip-1.',
+                        required=False)
+
+    args = parser.parse_args()
+
+    loglevel = logging.INFO
+    if args.verbose:
+        loglevel = logging.DEBUG
+
+    logging.basicConfig(level=loglevel)
+    logging.getLogger('tftpy').setLevel(logging.WARN if logging.WARN > loglevel else loglevel)  # tftpy is very spammy
+    logging.getLogger('paramiko.transport').setLevel(logging.INFO if logging.INFO > loglevel else loglevel)
+
+    if args.dryrun:
+        DRYRUN = True
+
+    main(args.port, args.initramfs, args.image, args.local_ip, args.ap_ip)
