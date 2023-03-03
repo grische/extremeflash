@@ -416,9 +416,9 @@ def setting_up_ips(local_ip: str, ap_ip_str: str = None):
 def ip_address_fix_prefix(ip_interface: ipaddress.IPv4Interface | ipaddress.IPv6Interface) \
         -> ipaddress.IPv4Interface | ipaddress.IPv6Interface:
     if ip_interface.network.prefixlen == ip_interface.network.max_prefixlen:  # probably forgot to specify network
-        if type(ip_interface) is ipaddress.IPv4Interface:
+        if isinstance(ip_interface, ipaddress.IPv4Interface):
             new_prefix = 24
-        elif type(ip_interface) is ipaddress.IPv6Interface:
+        elif isinstance(ip_interface, ipaddress.IPv6Interface):
             new_prefix = 64
         else:
             raise ValueError(f'Invalid IP interface received {type(ip_interface)}')
