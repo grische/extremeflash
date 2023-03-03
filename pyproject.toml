@@ -5,6 +5,7 @@ description = ""
 authors = ["Grische <2787581+grische@users.noreply.github.com>"]
 license = "GPL-3.0-only"
 readme = "README.md"
+packages = [{include = "extremeflash"}]
 
 [tool.poetry.dependencies]
 python = "^3.6"
