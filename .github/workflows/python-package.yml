@@ -1,0 +1,85 @@
+---
+name: Python package
+
+on:
+  push:
+    branches:
+      - "main"
+  pull_request:
+    branches:
+      - "main"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04 # required for python 3.6
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.6", "3.8", "3.10", "3.12.0-alpha - 3.12"]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install poetry and flake8
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install flake8 poetry
+
+      - name: Regenerate poetry lock file
+        if: matrix.python-version == '3.6' || matrix.python-version == '3.7'
+        run: |
+          rm poetry.lock
+          poetry lock
+
+      - name: Install project dependencies
+        run: |
+          poetry export -f requirements.txt --output requirements.txt
+          pip install -r requirements.txt
+
+      - name: Lint with flake8
+        run: |
+          # stop the build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+  test_deploy:
+    runs-on: ubuntu-latest
+    name: Publish on Test PyPi
+    if: github.event_name == 'push'
+    needs:
+      - build
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+
+      - name: Install poetry
+        run: |
+          python -m pip install --upgrade pip
+          pip install poetry
+
+      - name: Build Python package
+        run: |
+          # PyPi does not allow local version (v1.0+xxx), so only count commits since latest tag
+          poetry version $(git describe --tags --always | sed 's/-\([0-9]\+\).*/.dev\1/')
+          poetry build
+
+      - name: Publish package to Test PyPi
+        uses: pypa/gh-action-pypi-publish@c7f29f7adef1a245bd91520e94867e5c6eedddcc # v1.6.4
+        with:
+          user: __token__
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          repository_url: https://test.pypi.org/legacy/
