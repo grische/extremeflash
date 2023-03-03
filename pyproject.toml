@@ -14,6 +14,8 @@ tftpy = "^0.8.2"
 paramiko = "^3.0.0"
 scp = "^0.14.5"
 
+[tool.poetry.scripts]
+extremeflash = "extremeflash.__main__:run"
 
 [build-system]
 requires = ["poetry-core"]

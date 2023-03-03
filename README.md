@@ -4,16 +4,10 @@ This tool allows flashing Enterasys / Extreme Networks access points fully autom
 
 ## Installation
 
-Install all dependencies by running:
+Install the tool:
 
 ```commandline
-poetry install
-```
-
-or
-
-```commandline
-python3 -m pip install .
+pip install extremeflash
 ```
 
 ## Usage
@@ -30,11 +24,11 @@ python3 -m pip install .
 
 1. Make sure that the serial cable is connected to the access point, but it is not powered on yet
 
-1. Run the tool. If using poetry, run `poetry shell` beforehand.
+1. Run the tool
     * let it autodetect the serial port:
 
        ```commandline
-       ./ws-ap3710i.py --local-ip 192.168.1.70/24 \
+       extremeflash --local-ip 192.168.1.70/24 \
        -i ~/Downloads/openwrt-22.03.3-mpc85xx-p1020-extreme-networks_ws-ap3825i-initramfs-kernel.bin \
        -j ~/Downloads/openwrt-22.03.3-mpc85xx-p1020-enterasys_ws-ap3710i-squashfs-sysupgrade.bin
        ```
@@ -42,7 +36,7 @@ python3 -m pip install .
     * or manually specify the serial port:
 
        ```commandline
-       ./ws-ap3710i.py  --port /dev/ttyUSB0 --local-ip 192.168.1.70/24 \
+       extremeflash  --port /dev/ttyUSB0 --local-ip 192.168.1.70/24 \
        -i ~/Downloads/openwrt-22.03.3-mpc85xx-p1020-extreme-networks_ws-ap3825i-initramfs-kernel.bin \
        -j ~/Downloads/openwrt-22.03.3-mpc85xx-p1020-enterasys_ws-ap3710i-squashfs-sysupgrade.bin
        ```
@@ -50,10 +44,24 @@ python3 -m pip install .
     * For more information run:
 
        ```commandline
-       ./ws-ap3710i.py --help
+       extremeflash --help
        ```
 
 1. Power the access point and connect the LAN cable.
 
 1. The tool will flash the access point automatically. When it finishes, the access point
    can be reached via `192.168.1.1` (OpenWRT's default IP).
+
+## Contributing
+
+### Install dependencies
+
+If the dependencies are not already installed, run `poetry install` followed by a `poetry shell` to get an environment with all necessary dependencies.
+
+### Running modified code
+
+After modifying the code, run the tool by executing `python -m extremeflash` inside the repository's folder. For example:
+
+```commandline
+python3 -m extremeflash --help
+```
