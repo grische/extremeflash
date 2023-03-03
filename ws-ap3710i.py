@@ -17,15 +17,15 @@
 # SPDX-License-Identifier: GPL-3.0-only
 import ipaddress
 import logging
-import paramiko
 import pathlib
 import re
-import serial
 import tempfile
-import tftpy
 import time
-from threading import Event
-from threading import Thread
+from threading import Event, Thread
+
+import paramiko
+import serial
+import tftpy
 
 DRYRUN = False  # can be overriden with "--dryrun" argument
 #
@@ -290,8 +290,8 @@ def readline_from_serial(ser: serial.Serial) -> str:
 
 
 def start_tftp_server(tftp_dir: str, initramfs_filepath: str, ip: str = '0.0.0.0', port: int = 69) -> tftpy.TftpServer:
-    import shutil
     import os.path
+    import shutil
     shutil.copyfile(initramfs_filepath, os.path.join(tftp_dir, initramfs_filepath.name))
 
     logging.info(f"Starting tftp server on {ip}:{port} using {tftp_dir}")
