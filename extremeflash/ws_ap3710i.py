@@ -24,7 +24,8 @@ from threading import Event, Thread
 
 import paramiko
 import serial
-import tftpy
+
+from .tftp_server import TftpServer
 
 DRYRUN = False
 #
@@ -288,19 +289,6 @@ def readline_from_serial(ser: serial.Serial) -> str:
     return line
 
 
-def start_tftp_server(tftp_dir: str, initramfs_filepath: str, ip: str = '0.0.0.0', port: int = 69) -> tftpy.TftpServer:
-    import os.path
-    import shutil
-    shutil.copyfile(initramfs_filepath, os.path.join(tftp_dir, initramfs_filepath.name))
-
-    logging.info(f"Starting tftp server on {ip}:{port} using {tftp_dir}")
-    tftp_server = tftpy.TftpServer(tftp_dir)
-    logging.debug(f"Files in ${tftp_dir}: {os.listdir(tftp_dir)}")
-    tftp_thread = Thread(target=tftp_server.listen, args=[ip, port])
-    tftp_thread.start()
-    return tftp_server
-
-
 def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = '192.168.1.1'):
     import scp
     logging.info("SSH waiting for ready signal.")
@@ -350,8 +338,9 @@ def post_cleanup(tftp_server, ssh_thread, serial_thread):
         logging.info("Stopping Serial thread")
         event_keep_serial_active.clear()
 
-    logging.debug("Stopping TFTP server.")
-    tftp_server.stop()  # set now=True to force shutdown
+    if tftp_server and tftp_server.is_alive():
+        logging.debug("Stopping TFTP server.")
+        tftp_server.stop()  # set now=True to force shutdown
 
 
 def main(serial_port: str, initramfs_path_str: str, sysupgrade_path_str: str, local_ip: str, ap_ip: str = None, dryrun: bool = False):
@@ -366,7 +355,8 @@ def main(serial_port: str, initramfs_path_str: str, sysupgrade_path_str: str, lo
     initramfs_path = pathlib.Path(initramfs_path_str)
     sysupgrade_path = pathlib.Path(sysupgrade_path_str)
 
-    tftp_server = start_tftp_server(tmpdir.name, initramfs_path, ip=str(local_ip_interface.ip))
+    tftp_server = TftpServer(initramfs_path_str, listenip=str(local_ip_interface.ip))
+    tftp_server.start()
     serial_thread = None
     ssh_thread = None
     try:
