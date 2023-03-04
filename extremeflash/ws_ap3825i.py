@@ -123,21 +123,23 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
     time.sleep(1)
     printenv_return = ser.read(ser.in_waiting).decode("ascii")
     debug_serial(printenv_return)
+
+    if "MODEL=AP3825i" not in printenv_return:
+        model = re.search(r'MODEL=(.*)\r\n', printenv_return)
+        raise RuntimeWarning(f"Unexpected Model {None if model is None else model.group(1)} found. Aborting to not harm device.")
+
     boot_openwrt_params = b'cp.b 0xEC000000 0x2000000 0x2000000; interrupts off; bootm start 0x2000000; bootm loados; fdt resize; fdt boardsetup; fdt chosen; bootm prep; bootm go;'
+    # TODO: Use better parameters
+    # https://forum.darmstadt.freifunk.net/t/flashing-of-the-extreme-networks-ws-ap3825i/923
     if "boot_openwrt" in printenv_return:
         logging.debug("Found existing U-Boot boot_openwrt parameter. Verifying.")
         existing_boot_openwrt_params = re.search(r'boot_openwrt=(.*)\r\n', printenv_return).group(1)
         if boot_openwrt_params.decode('ascii') != existing_boot_openwrt_params:
-            error_message = f'''
-                    Aborting. Unexpected param for 'boot_openwrt' found.
-                    Found: "{existing_boot_openwrt_params}"
-                    Expected: "{boot_openwrt_params.decode('ascii')}"
-                '''
-            raise RuntimeError(error_message)
+            logging.warning(f"Overwriting unexpected param for 'boot_openwrt': {existing_boot_openwrt_params}")
+        else:
+            logging.debug("Existing U-Boot boot_openwrt parameter looks good.")
 
-        logging.debug("Existing U-Boot boot_openwrt parameter looks good.")
-
-    else:
+    if True:  # TODO: remove indentation if it works
         logging.info("Did not find boot_openwrt in U-Boot parameters. Setting it.")
         write_to_serial(ser, b'setenv boot_openwrt "' + boot_openwrt_params + b'"\n')
         time.sleep(0.5)
