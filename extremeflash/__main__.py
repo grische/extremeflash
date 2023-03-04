@@ -5,7 +5,8 @@ import logging
 
 import serial
 
-from .ws_ap3710i import main
+from .ws_ap3710i import main as main_ap3710i
+from .ws_ap3825i import main as main_ap3825i
 
 def test_serial_port(potential_serial_port):
     serial.Serial(port=potential_serial_port, baudrate=115200, timeout=5)
@@ -58,6 +59,9 @@ def run():
     parser.add_argument('--ap-ip', action='store', type=ipaddress.ip_interface,
                         help='The (temporary) IP of the access point to communicate with. Defaults to broadcast ip-1.',
                         required=False)
+    parser.add_argument("-m", '--model', action='store', type=str, choices={"AP3710", "AP3825"}, default = "AP3710",
+                        help='The (temporary) IP of the access point to communicate with. Defaults to broadcast ip-1.',
+                        required=False)
 
     args = parser.parse_args()
 
@@ -72,6 +76,11 @@ def run():
     serial_port = args.port
     if not args.port:
         serial_port = find_serial_port()
+
+    if args.model == "AP3710":
+        main = main_ap3710i
+    if args.model == "AP3825":
+        main = main_ap3825i
 
     main(serial_port, args.initramfs, args.image, args.local_ip, args.ap_ip, args.dryrun)
 
