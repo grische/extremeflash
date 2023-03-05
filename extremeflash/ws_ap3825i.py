@@ -261,6 +261,48 @@ def boot_set_ips(ser, new_ap_ip):
     time.sleep(0.5)
 
 
+def boot_make_mtd_backup(transport):
+    with transport.open_session() as chan:
+        command_grab_mtds = "cat /proc/mtd | awk '{ print $1 $4 }' | tr -d '\"'"
+        logging.debug(f"Running remote: {command_grab_mtds}")
+        stdout = chan.makefile("r")
+        stderr = chan.makefile_stderr("r")
+        chan.exec_command(command_grab_mtds)
+        sysupgrade_stdout = stdout.read().decode()
+        sysupgrade_stderr = stderr.read().decode()
+        if sysupgrade_stderr:
+            raise RuntimeError(f"Unable to make mtd backup: {sysupgrade_stderr}")
+
+        mtds = sysupgrade_stdout.split('\n')
+        mtd_partitions = []
+        for line in mtds[1:]:
+            if line:  # skip empty lines
+                mtd_partitions.append(line.split(":"))
+                # results in e.g. ['mtd0', 'firmware']
+
+    logging.debug(f"Found mtds: {mtd_partitions}")
+    for mtd_partition in mtd_partitions:
+        logging.info(f"Backing up {mtd_number}")
+        mtd_number = mtd_partition[0]
+        mtd_name = mtd_partition[1]
+        with transport.open_session() as chan:
+            stdout = chan.makefile("r")
+            stderr = chan.makefile_stderr("r")
+            if DRYRUN:
+                chan.exec_command(f"echo dd if=/dev/{mtd_number} of=/tmp/{mtd_number}_{mtd_name} conv=fsync")
+            else:
+                chan.exec_command(f"dd if=/dev/{mtd_number} of=/tmp/{mtd_number}_{mtd_name} conv=fsync")
+            stdout_output = stdout.read().decode()
+            if stdout_output:
+                logging.debug(f"stdout: {stdout_output}")
+            stderr_output = stderr.read().decode()
+            if stderr_output:
+                logging.debug(f"stderr: {stderr_output}")
+        logging.debug(f"Made a backup of {mtd_number}")
+
+    # TODO copy the data
+    # TODO remove backups from remote /tmp/
+
 def keep_logging_until_reboot(ser: serial.Serial):
     while event_keep_serial_active.is_set():
         if ser.in_waiting > 5:
@@ -330,6 +372,8 @@ def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = "192.168.1.1"):
         transport.auth_none("root")  # password-less login
 
         firmware_target_path = "/tmp/firmware.bin"
+
+        # boot_make_mtd_backup(transport)
 
         # Basic OpenWRT only supports SCP, not SFTP
         with scp.SCPClient(transport) as scp:
