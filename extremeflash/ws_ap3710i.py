@@ -319,6 +319,61 @@ def readline_from_serial(ser: serial.Serial) -> str:
     return line
 
 
+def boot_make_mtd_backup(transport: paramiko.Transport, backup_path: str = ''):
+    from scp import SCPClient
+
+    with transport.open_session() as chan:
+        command_grab_mtds = "cat /proc/mtd | awk '{ print $1 $4 }' | tr -d '\"'"
+        logging.debug(f"Running remote: {command_grab_mtds}")
+        stdout = chan.makefile("r")
+        stderr = chan.makefile_stderr("r")
+        chan.exec_command(command_grab_mtds)
+        sysupgrade_stdout = stdout.read().decode()
+        sysupgrade_stderr = stderr.read().decode()
+        if sysupgrade_stderr:
+            raise RuntimeError(f"Unable to make mtd backup: {sysupgrade_stderr}")
+
+        mtds = sysupgrade_stdout.split("\n")
+        mtd_partitions = []
+        for line in mtds[1:]:
+            if line:  # skip empty lines
+                mtd_partitions.append(line.split(":"))
+                # results in e.g. ['mtd0', 'firmware']
+
+    logging.debug(f"Found mtds: {mtd_partitions}")
+    for mtd_partition in mtd_partitions:
+        logging.info(f"Backing up {mtd_partition}")
+        mtd_number = mtd_partition[0]
+        mtd_name = mtd_partition[1]
+        backup_filepath=f"/tmp/{mtd_number}_{mtd_name}"
+        with transport.open_session() as chan:
+            stdout = chan.makefile("r")
+            stderr = chan.makefile_stderr("r")
+            if DRYRUN:
+                chan.exec_command(f"echo dd if=/dev/{mtd_number} of={backup_filepath} conv=fsync")
+            else:
+                chan.exec_command(f"dd if=/dev/{mtd_number} of={backup_filepath} conv=fsync")
+            stdout_output = stdout.read().decode()
+            if stdout_output:
+                logging.debug(f"stdout: {stdout_output}")
+            stderr_output = stderr.read().decode()
+            if stderr_output:
+                logging.debug(f"stderr: {stderr_output}")
+        logging.debug(f"Made a backup of {mtd_number}")
+
+        with SCPClient(transport) as scp:
+            logging.debug(f"Copying {backup_filepath}")
+            if not DRYRUN:
+                scp.get(backup_filepath, backup_path)
+
+        with transport.open_session() as chan:
+            if DRYRUN:
+                logging.debug(f"Dry-Run: No backup done, so no backup to delete")
+            else:
+                logging.debug(f"Cleaning up {backup_filepath}")
+                chan.exec_command(f"rm {backup_filepath}")
+
+
 def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = "192.168.1.1"):
     import scp
 
@@ -333,6 +388,10 @@ def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = "192.168.1.1"):
         transport.auth_none("root")  # password-less login
 
         firmware_target_path = "/tmp/firmware.bin"
+
+        # TODO: include serial number in backup filenames (to track backup of device)
+        # TODO: include timestamp in backup filenames (to allow running tool multiple times without overwriting backup)
+        boot_make_mtd_backup(transport)
 
         # Basic OpenWRT only supports SCP, not SFTP
         with scp.SCPClient(transport) as scp:
