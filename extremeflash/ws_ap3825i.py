@@ -282,7 +282,7 @@ def boot_make_mtd_backup(transport):
 
     logging.debug(f"Found mtds: {mtd_partitions}")
     for mtd_partition in mtd_partitions:
-        logging.info(f"Backing up {mtd_number}")
+        logging.info(f"Backing up {mtd_partition}")
         mtd_number = mtd_partition[0]
         mtd_name = mtd_partition[1]
         with transport.open_session() as chan:
@@ -419,8 +419,6 @@ def main(serial_port: str, initramfs_path_str: str, sysupgrade_path_str: str, lo
     # TODO: improve DRYRUN
     global DRYRUN
     DRYRUN = dryrun
-
-    tmpdir = tempfile.TemporaryDirectory()  # automatically cleaned up after process termination
 
     ap_ip_interface, local_ip_interface = setting_up_ips(local_ip, ap_ip)
 
