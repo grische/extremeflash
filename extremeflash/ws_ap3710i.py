@@ -18,7 +18,6 @@ import ipaddress
 import logging
 import pathlib
 import re
-import tempfile
 import time
 from threading import Event, Thread
 
@@ -26,6 +25,7 @@ import paramiko
 import serial
 
 from .tftp_server import TftpServer
+from typing import Optional
 
 DRYRUN = False
 #
@@ -71,7 +71,7 @@ def bootup_interrupt(ser: serial.Serial):
                 or "### JFFS2 LOAD ERROR" in line  # OpenWRT message :-|
         ):
             text = b"x"  # send interrupt key
-            logging.info(f"JFFS2 load done. Sending interrupt key {text}.")
+            logging.info(f"JFFS2 load done. Sending interrupt key {text.decode()}.")
             time.sleep(0.5)  # sleep 500ms
             ser.write(text)
             break
@@ -85,13 +85,13 @@ def bootup_login(ser: serial.Serial):
 
         if "[30s timeout]" in line:
             time.sleep(0.1)
-            logging.info(f"Attempting to log in.")
+            logging.info("Attempting to log in.")
             ser.write(b"admin\n")
             time.sleep(0.1)
             ser.write(b"new2day\n")
         elif "password: new2day" in line:
             time.sleep(0.1)  # sleep 500ms
-            logging.info(f"Checking if login was successful.")
+            logging.info("Checking if login was successful.")
             break
 
         time.sleep(0.01)
@@ -107,10 +107,10 @@ def bootup_login_verification(ser: serial.Serial):
             debug_serial(chars)
 
             if prompt_string in chars:
-                logging.info(f"U-Boot login successful!")
+                logging.info("U-Boot login successful!")
                 break
-            else:
-                raise RuntimeError("U-Boot login failed :((")
+
+            raise RuntimeError("U-Boot login failed :((")
 
         time.sleep(0.01)
 
@@ -125,13 +125,18 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
 
     if "MODEL=AP3710i" not in printenv_return:
         model = re.search(r'MODEL=(.*)\r\n', printenv_return)
-        raise RuntimeWarning(f"Unexpected Model {None if model is None else model.group(1)} found. Aborting to not harm device.")
+        raise RuntimeWarning(
+            f"Unexpected Model {None if model is None else model.group(1)} found. Aborting to not harm device."
+        )
 
     boot_openwrt_params = b'setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000'
     if "boot_openwrt" in printenv_return:
         logging.debug("Found existing U-Boot boot_openwrt parameter. Verifying.")
-        existing_boot_openwrt_params = re.search(r'boot_openwrt=(.*)\r\n', printenv_return).group(1)
-        if boot_openwrt_params.decode('ascii') != existing_boot_openwrt_params:
+        existing_boot_openwrt_params = re.search(r"boot_openwrt=(.*)\r\n", printenv_return)
+        if not existing_boot_openwrt_params:
+            raise RuntimeError("Unable to parse detected boot_openwrt paramter")
+
+        if boot_openwrt_params.decode("ascii") != existing_boot_openwrt_params.group(1):
             error_message = f'''
                     Aborting. Unexpected param for 'boot_openwrt' found.
                     Found: "{existing_boot_openwrt_params}"
@@ -195,8 +200,9 @@ def boot_via_tftp(ser: serial.Serial,
 
         elif "ERROR: can't get kernel image!" in line:
             # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/bootm.c#L123
-            logging.error(f"Unable to boot initramfs file. Check you provided the correct file. Aborting.")
+            logging.error("Unable to boot initramfs file. Check you provided the correct file. Aborting.")
             import os
+            # pylint: disable=protected-access
             os._exit(1)
 
         elif "## Booting kernel from FIT Image at" in line:  # with U-Boot v2009.x
@@ -325,8 +331,8 @@ def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = '192.168.1.1'):
             chan.exec_command(sysupgrade_command)
             sysupgrade_stdout = stdout.read().decode()
             sysupgrade_stderr = stderr.read().decode()
-            logging.debug("sysupgrade stdout: " + sysupgrade_stdout)
-            logging.debug("sysupgrade stderr: " + sysupgrade_stderr)
+            logging.debug("sysupgrade stdout: %s", sysupgrade_stdout)
+            logging.debug("sysupgrade stderr: %s", sysupgrade_stderr)
 
             # sysupgrade prints to stderr by default
             if "Commencing upgrade" in sysupgrade_stderr:
@@ -348,12 +354,17 @@ def post_cleanup(tftp_server, ssh_thread, serial_thread):
         tftp_server.stop()  # set now=True to force shutdown
 
 
-def main(serial_port: str, initramfs_path_str: str, sysupgrade_path_str: str, local_ip: str, ap_ip: str = None, dryrun: bool = False):
+def main(
+    serial_port: str,
+    initramfs_path_str: str,
+    sysupgrade_path_str: str,
+    local_ip: str,
+    ap_ip: Optional[str] = None,
+    dryrun: bool = False,
+):
     # TODO: improve DRYRUN
     global DRYRUN
     DRYRUN = dryrun
-
-    tmpdir = tempfile.TemporaryDirectory()  # automatically cleaned up after process termination
 
     ap_ip_interface, local_ip_interface = setting_up_ips(local_ip, ap_ip)
 
@@ -391,7 +402,7 @@ def main(serial_port: str, initramfs_path_str: str, sysupgrade_path_str: str, lo
         post_cleanup(tftp_server, ssh_thread, serial_thread)
 
 
-def setting_up_ips(local_ip: str, ap_ip_str: str = None):
+def setting_up_ips(local_ip: str, ap_ip_str: Optional[str] = None):
     # IP management
     local_ip_interface = ipaddress.ip_interface(local_ip)
     local_ip_interface = ip_address_fix_prefix(local_ip_interface)

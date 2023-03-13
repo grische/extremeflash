@@ -7,9 +7,11 @@ import serial
 
 from .ws_ap3710i import main
 
+
 def test_serial_port(potential_serial_port):
     serial.Serial(port=potential_serial_port, baudrate=115200, timeout=5)
     return potential_serial_port
+
 
 def find_serial_port():
     common_serial_ports = [
@@ -33,6 +35,7 @@ def find_serial_port():
                 continue
             raise
     raise RuntimeError(f"No valid accessible port found in {common_serial_ports}")
+
 
 def run():
     parser = argparse.ArgumentParser(
@@ -74,6 +77,7 @@ def run():
         serial_port = find_serial_port()
 
     main(serial_port, args.initramfs, args.image, args.local_ip, args.ap_ip, args.dryrun)
+
 
 if __name__ == "__main__":
     run()
