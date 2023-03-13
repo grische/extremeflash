@@ -51,6 +51,10 @@ jobs:
         run: |
           mypy .
 
+      - name: Check formatting with black
+        run: |
+          black --check .
+
   test_deploy:
     runs-on: ubuntu-latest
     name: Publish on Test PyPi
