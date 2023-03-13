@@ -130,8 +130,11 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
     boot_openwrt_params = b'setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000'
     if "boot_openwrt" in printenv_return:
         logging.debug("Found existing U-Boot boot_openwrt parameter. Verifying.")
-        existing_boot_openwrt_params = re.search(r'boot_openwrt=(.*)\r\n', printenv_return).group(1)
-        if boot_openwrt_params.decode('ascii') != existing_boot_openwrt_params:
+        existing_boot_openwrt_params = re.search(r"boot_openwrt=(.*)\r\n", printenv_return)
+        if not existing_boot_openwrt_params:
+            raise RuntimeError("Unable to parse detected boot_openwrt paramter")
+
+        if boot_openwrt_params.decode("ascii") != existing_boot_openwrt_params.group(1):
             error_message = f'''
                     Aborting. Unexpected param for 'boot_openwrt' found.
                     Found: "{existing_boot_openwrt_params}"
