@@ -18,7 +18,6 @@ import ipaddress
 import logging
 import pathlib
 import re
-import tempfile
 import time
 from threading import Event, Thread
 
@@ -352,8 +351,6 @@ def main(serial_port: str, initramfs_path_str: str, sysupgrade_path_str: str, lo
     # TODO: improve DRYRUN
     global DRYRUN
     DRYRUN = dryrun
-
-    tmpdir = tempfile.TemporaryDirectory()  # automatically cleaned up after process termination
 
     ap_ip_interface, local_ip_interface = setting_up_ips(local_ip, ap_ip)
 
