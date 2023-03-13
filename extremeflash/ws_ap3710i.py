@@ -329,8 +329,8 @@ def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = '192.168.1.1'):
             chan.exec_command(sysupgrade_command)
             sysupgrade_stdout = stdout.read().decode()
             sysupgrade_stderr = stderr.read().decode()
-            logging.debug("sysupgrade stdout: " + sysupgrade_stdout)
-            logging.debug("sysupgrade stderr: " + sysupgrade_stderr)
+            logging.debug("sysupgrade stdout: %s", sysupgrade_stdout)
+            logging.debug("sysupgrade stderr: %s", sysupgrade_stderr)
 
             # sysupgrade prints to stderr by default
             if "Commencing upgrade" in sysupgrade_stderr:
