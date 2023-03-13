@@ -71,7 +71,7 @@ def bootup_interrupt(ser: serial.Serial):
                 or "### JFFS2 LOAD ERROR" in line  # OpenWRT message :-|
         ):
             text = b"x"  # send interrupt key
-            logging.info(f"JFFS2 load done. Sending interrupt key {text}.")
+            logging.info(f"JFFS2 load done. Sending interrupt key {text.decode()}.")
             time.sleep(0.5)  # sleep 500ms
             ser.write(text)
             break
