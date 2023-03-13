@@ -85,13 +85,13 @@ def bootup_login(ser: serial.Serial):
 
         if "[30s timeout]" in line:
             time.sleep(0.1)
-            logging.info(f"Attempting to log in.")
+            logging.info("Attempting to log in.")
             ser.write(b"admin\n")
             time.sleep(0.1)
             ser.write(b"new2day\n")
         elif "password: new2day" in line:
             time.sleep(0.1)  # sleep 500ms
-            logging.info(f"Checking if login was successful.")
+            logging.info("Checking if login was successful.")
             break
 
         time.sleep(0.01)
@@ -107,7 +107,7 @@ def bootup_login_verification(ser: serial.Serial):
             debug_serial(chars)
 
             if prompt_string in chars:
-                logging.info(f"U-Boot login successful!")
+                logging.info("U-Boot login successful!")
                 break
 
             raise RuntimeError("U-Boot login failed :((")
@@ -198,7 +198,7 @@ def boot_via_tftp(ser: serial.Serial,
 
         elif "ERROR: can't get kernel image!" in line:
             # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/bootm.c#L123
-            logging.error(f"Unable to boot initramfs file. Check you provided the correct file. Aborting.")
+            logging.error("Unable to boot initramfs file. Check you provided the correct file. Aborting.")
             import os
             os._exit(1)
 
