@@ -25,6 +25,7 @@ import paramiko
 import serial
 
 from .tftp_server import TftpServer
+from typing import Optional
 
 DRYRUN = False
 #
@@ -347,7 +348,14 @@ def post_cleanup(tftp_server, ssh_thread, serial_thread):
         tftp_server.stop()  # set now=True to force shutdown
 
 
-def main(serial_port: str, initramfs_path_str: str, sysupgrade_path_str: str, local_ip: str, ap_ip: str = None, dryrun: bool = False):
+def main(
+    serial_port: str,
+    initramfs_path_str: str,
+    sysupgrade_path_str: str,
+    local_ip: str,
+    ap_ip: Optional[str] = None,
+    dryrun: bool = False,
+):
     # TODO: improve DRYRUN
     global DRYRUN
     DRYRUN = dryrun
@@ -388,7 +396,7 @@ def main(serial_port: str, initramfs_path_str: str, sysupgrade_path_str: str, lo
         post_cleanup(tftp_server, ssh_thread, serial_thread)
 
 
-def setting_up_ips(local_ip: str, ap_ip_str: str = None):
+def setting_up_ips(local_ip: str, ap_ip_str: Optional[str] = None):
     # IP management
     local_ip_interface = ipaddress.ip_interface(local_ip)
     local_ip_interface = ip_address_fix_prefix(local_ip_interface)
