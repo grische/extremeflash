@@ -200,6 +200,7 @@ def boot_via_tftp(ser: serial.Serial,
             # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/bootm.c#L123
             logging.error("Unable to boot initramfs file. Check you provided the correct file. Aborting.")
             import os
+            # pylint: disable=protected-access
             os._exit(1)
 
         elif "## Booting kernel from FIT Image at" in line:  # with U-Boot v2009.x
