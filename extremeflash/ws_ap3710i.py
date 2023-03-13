@@ -109,8 +109,8 @@ def bootup_login_verification(ser: serial.Serial):
             if prompt_string in chars:
                 logging.info(f"U-Boot login successful!")
                 break
-            else:
-                raise RuntimeError("U-Boot login failed :((")
+
+            raise RuntimeError("U-Boot login failed :((")
 
         time.sleep(0.01)
 
