@@ -125,7 +125,9 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
 
     if "MODEL=AP3710i" not in printenv_return:
         model = re.search(r'MODEL=(.*)\r\n', printenv_return)
-        raise RuntimeWarning(f"Unexpected Model {None if model is None else model.group(1)} found. Aborting to not harm device.")
+        raise RuntimeWarning(
+            f"Unexpected Model {None if model is None else model.group(1)} found. Aborting to not harm device."
+        )
 
     boot_openwrt_params = b'setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000'
     if "boot_openwrt" in printenv_return:
