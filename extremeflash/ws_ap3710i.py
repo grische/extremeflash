@@ -67,8 +67,8 @@ def bootup_interrupt(ser: serial.Serial):
         # These lines probably only works with custom Enterasys U-Boot v2009.11.10
         # TODO: add support for other / newer versions of U-Boot
         if (
-                "### JFFS2 load complete" in line  # stock firmware message
-                or "### JFFS2 LOAD ERROR" in line  # OpenWRT message :-|
+            "### JFFS2 load complete" in line  # stock firmware message
+            or "### JFFS2 LOAD ERROR" in line  # OpenWRT message :-|
         ):
             text = b"x"  # send interrupt key
             logging.info(f"JFFS2 load done. Sending interrupt key {text.decode()}.")
@@ -148,10 +148,10 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
 
     else:
         logging.info("Did not find boot_openwrt in U-Boot parameters. Setting it.")
-        write_to_serial(ser, b"setenv boot_openwrt \"" + boot_openwrt_params + b"\"\n")
+        write_to_serial(ser, b'setenv boot_openwrt "' + boot_openwrt_params + b'"\n')
         time.sleep(0.5)
 
-        write_to_serial(ser, b"setenv bootcmd \"run boot_openwrt\"\n")
+        write_to_serial(ser, b'setenv bootcmd "run boot_openwrt"\n')
         time.sleep(0.5)
 
         if DRYRUN:
@@ -167,10 +167,12 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
             raise RuntimeError("saveenv did not successfully write to flash")
 
 
-def boot_via_tftp(ser: serial.Serial,
-                  tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
-                  tftp_file: str,
-                  new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface):
+def boot_via_tftp(
+    ser: serial.Serial,
+    tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+    tftp_file: str,
+    new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+):
     new_ap_ip_str = str(new_ap_ip.ip).encode("ascii")
     new_ap_netmask_str = str(new_ap_ip.netmask).encode("ascii")
     tftp_ip_str = str(tftp_ip.ip).encode("ascii")
@@ -202,6 +204,7 @@ def boot_via_tftp(ser: serial.Serial,
             # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/bootm.c#L123
             logging.error("Unable to boot initramfs file. Check you provided the correct file. Aborting.")
             import os
+
             # pylint: disable=protected-access
             os._exit(1)
 
@@ -257,10 +260,12 @@ def keep_logging_until_reboot(ser: serial.Serial):
         time.sleep(0.05)
 
 
-def start_tftp_boot_via_serial(name: str,
-                               tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
-                               tftp_file: str,
-                               new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface):
+def start_tftp_boot_via_serial(
+    name: str,
+    tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+    tftp_file: str,
+    new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+):
     with serial.Serial(port=name, baudrate=115200, timeout=30) as ser:
         logging.info(f"Starting to connect to serial port {ser.name}")
         event_keep_serial_active.set()
@@ -302,6 +307,7 @@ def readline_from_serial(ser: serial.Serial) -> str:
 
 def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = "192.168.1.1"):
     import scp
+
     logging.info("SSH waiting for ready signal.")
     event_ssh_ready.wait()
     if event_abort_ssh.is_set():
@@ -376,9 +382,11 @@ def main(
     serial_thread = None
     ssh_thread = None
     try:
-        serial_thread = Thread(target=start_tftp_boot_via_serial,
-                               args=[serial_port, local_ip_interface, initramfs_path.name, ap_ip_interface],
-                               daemon=True)
+        serial_thread = Thread(
+            target=start_tftp_boot_via_serial,
+            args=[serial_port, local_ip_interface, initramfs_path.name, ap_ip_interface],
+            daemon=True,
+        )
         ssh_thread = Thread(target=start_ssh, args=[sysupgrade_path, str(ap_ip_interface.ip)])
         logging.debug("Starting serial thread")
         serial_thread.start()
@@ -408,7 +416,8 @@ def setting_up_ips(local_ip: str, ap_ip_str: Optional[str] = None):
     local_ip_interface = ip_address_fix_prefix(local_ip_interface)
     # the ap shall have one less than the broadcast address re-using the same prefix
     ap_ip_interface = ipaddress.ip_interface(
-        f"{local_ip_interface.network.broadcast_address - 1}/{local_ip_interface.network.prefixlen}")
+        f"{local_ip_interface.network.broadcast_address - 1}/{local_ip_interface.network.prefixlen}"
+    )
 
     if ap_ip_str:
         ap_ip_interface = ipaddress.ip_interface(ap_ip_str)
@@ -416,14 +425,16 @@ def setting_up_ips(local_ip: str, ap_ip_str: Optional[str] = None):
 
     if local_ip_interface.ip == ap_ip_interface.ip:
         raise ValueError(
-            f"Local IP {local_ip_interface.with_prefixlen} and AP IP {ap_ip_interface.with_prefixlen} are identical.")
+            f"Local IP {local_ip_interface.with_prefixlen} and AP IP {ap_ip_interface.with_prefixlen} are identical."
+        )
 
     # TODO: Check that AP and Local ip can reach each other: ap_ip_str.network.overlaps(...) maybe?
     return ap_ip_interface, local_ip_interface
 
 
-def ip_address_fix_prefix(ip_interface: ipaddress.IPv4Interface | ipaddress.IPv6Interface) \
-        -> ipaddress.IPv4Interface | ipaddress.IPv6Interface:
+def ip_address_fix_prefix(
+    ip_interface: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+) -> ipaddress.IPv4Interface | ipaddress.IPv6Interface:
     if ip_interface.network.prefixlen == ip_interface.network.max_prefixlen:  # probably forgot to specify network
         if isinstance(ip_interface, ipaddress.IPv4Interface):
             new_prefix = 24
@@ -432,8 +443,10 @@ def ip_address_fix_prefix(ip_interface: ipaddress.IPv4Interface | ipaddress.IPv6
         else:
             raise ValueError(f"Invalid IP interface received {type(ip_interface)}")
 
-        logging.warning(f"Received too small network prefix {ip_interface.network.prefixlen} for {ip_interface}. "
-                        + f"Assuming {ip_interface.ip}/{new_prefix}.")
+        logging.warning(
+            f"Received too small network prefix {ip_interface.network.prefixlen} for {ip_interface}. "
+            + f"Assuming {ip_interface.ip}/{new_prefix}."
+        )
         ip_interface = ipaddress.ip_interface(f"{ip_interface.ip}/{new_prefix}")
     elif ip_interface.network.prefixlen == ip_interface.network.max_prefixlen - 1:  # we need at least two IPs+broadcast
         raise ValueError(f"Too small IP prefix for {ip_interface}. Requires space for at least two IPs + broadcast.")
