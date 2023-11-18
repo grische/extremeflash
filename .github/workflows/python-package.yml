@@ -45,6 +45,9 @@ jobs:
           pylint .
 
       - name: Lint with mypy
+        # Python 3.12 is currently unsupported
+        # see https://github.com/python/mypy/issues/15277
+        if: ${{ matrix.python-version != '3.12.0-alpha - 3.12' }}
         run: |
           mypy .
 
