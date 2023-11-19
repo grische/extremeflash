@@ -19,6 +19,10 @@ pip install extremeflash
 3. download an OpenWRT initramfs-kernel image, e.g. [for the WS-AP3710i](https://openwrt.org/toh/enterasys/ws-ap3710i#installation)
 4. download an OpenWRT-based squashfs-sysupgrade, e.g. [for the WS-AP3710i](https://openwrt.org/toh/enterasys/ws-ap3710i#installation)
 
+**Note**: While it is generally recommended to use the same version for initramfs-kernel and squashfs-sysupgrade, the process
+can work with different versions. This is especially important if a downstream OpenWRT firmware (e.g. Gluon) with a different
+version should be installed on the router.
+
 ### Run the tool
 
 1. Make sure that the serial cable is connected to the access point, but it is not powered on yet
