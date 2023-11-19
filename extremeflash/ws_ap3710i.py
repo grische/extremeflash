@@ -14,18 +14,19 @@
 #     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 # SPDX-License-Identifier: GPL-3.0-only
+"""This tool allows flashing Enterasys WS-AP3710i access points fully automatically, using OpenWRT's initramfs image."""
 import ipaddress
 import logging
 import pathlib
 import re
 import time
 from threading import Event, Thread
+from typing import Optional
 
 import paramiko
 import serial
 
 from .tftp_server import TftpServer
-from typing import Optional
 
 DRYRUN = False
 #
@@ -167,6 +168,19 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
             raise RuntimeError("saveenv did not successfully write to flash")
 
 
+def is_kernel_booting(line):
+    if "## Booting kernel from FIT Image at" in line:  # with U-Boot v2009.x
+        # https://github.com/u-boot/u-boot/blob/f20393c5e787b3776c179d20f82a86bda124d651/common/cmd_bootm.c#L897
+        return True
+
+    # TODO: check if this works! the original check above might be called different with newer version of U-Boot:
+    if "## Loading kernel from FIT Image at" in line:  # with U-Boot v2013.07 and newer
+        # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/image-fit.c#L2079
+        return True
+
+    return False
+
+
 def boot_via_tftp(
     ser: serial.Serial,
     tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
@@ -198,6 +212,7 @@ def boot_via_tftp(
 
         elif "Wrong Image Format for bootm command" in line:
             # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/bootm.c#L974
+            # do not trigger any other condition, simply retyry when wrong image format was found
             logging.error("TFTP boot found wrong image format")
 
         elif "ERROR: can't get kernel image!" in line:
@@ -208,13 +223,7 @@ def boot_via_tftp(
             # pylint: disable=protected-access
             os._exit(1)
 
-        elif "## Booting kernel from FIT Image at" in line:  # with U-Boot v2009.x
-            # https://github.com/u-boot/u-boot/blob/f20393c5e787b3776c179d20f82a86bda124d651/common/cmd_bootm.c#L897
-            break
-
-        # TODO: check if this works! the original check above might be called different with newer version of U-Boot:
-        elif "## Loading kernel from FIT Image at" in line:  # with U-Boot v2013.07 and newer
-            # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/image-fit.c#L2079
+        elif is_kernel_booting(line):
             break
 
         time.sleep(0.01)

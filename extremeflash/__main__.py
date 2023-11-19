@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""ExtremeFlash main module"""
 import argparse
 import ipaddress
 import logging
@@ -112,6 +113,7 @@ def run():
     if not args.port:
         serial_port = find_serial_port()
 
+    main = None
     if args.model == "AP3710":
         main = main_ap3710i
 
