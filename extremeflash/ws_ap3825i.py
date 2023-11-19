@@ -61,12 +61,22 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
             f"Unexpected Model {None if model is None else model.group(1)} found. Aborting to not harm device."
         )
 
+    # From https://forum.darmstadt.freifunk.net/t/flashing-of-the-extreme-networks-ws-ap3825i/923
     boot_openwrt_params = (
-        b"cp.b 0xEC000000 0x2000000 0x2000000; interrupts off; bootm start 0x2000000; bootm loados; "
-        b"fdt resize; fdt boardsetup; fdt chosen; bootm prep; bootm go;"
+        b"cp.b 0xEC000000 0x2000000 0x2000000;"
+        b"interrupts off;"
+        b"bootm start 0x2000000;"
+        b"bootm loados;"
+        b"fdt resize;"
+        b"fdt boardsetup;"
+        b"fdt resize;"
+        b"fdt boardsetup;"
+        b"fdt chosen;"
+        b"fdt resize;"
+        b"fdt chosen;"
+        b"bootm prep;"
+        b"bootm go;"
     )
-    # TODO: Use better parameters
-    # https://forum.darmstadt.freifunk.net/t/flashing-of-the-extreme-networks-ws-ap3825i/923
 
     if "boot_openwrt" in printenv_return:
         logging.debug("Found existing U-Boot boot_openwrt parameter. Verifying.")
