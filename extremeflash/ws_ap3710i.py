@@ -178,6 +178,11 @@ def is_kernel_booting(line):
         # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/image-fit.c#L2079
         return True
 
+    # TODO: improve this section. Mixing usages here.
+    if "[    0.000000] Linux version " in line:
+        # kernel is booting
+        return True
+
     return False
 
 
