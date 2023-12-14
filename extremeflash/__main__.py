@@ -7,6 +7,7 @@ import logging
 import serial
 
 from .ws_ap3710i import main as main_ap3710i
+from .ws_ap3715i import main as main_ap3715i
 from .ws_ap3825i import main as main_ap3825i
 
 
@@ -94,7 +95,7 @@ def run():
         "--model",
         action="store",
         type=str,
-        choices={"AP3710", "AP3825"},
+        choices={"AP3710", "AP3715", "AP3825"},
         default="AP3710",
         help="The model of the Extreme Networks or Enterasys access point that should be flashed.",
         required=False,
@@ -117,6 +118,8 @@ def run():
     main = None
     if args.model == "AP3710":
         main = main_ap3710i
+    elif args.model == "AP3715":
+        main = main_ap3715i
     elif args.model == "AP3825":
         main = main_ap3825i
 
