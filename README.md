@@ -7,6 +7,12 @@ This tool allows flashing Enterasys / Extreme Networks access points fully autom
 Install the tool:
 
 ```commandline
+pipx install extremeflash
+```
+
+or
+
+```commandline
 pip install extremeflash
 ```
 
