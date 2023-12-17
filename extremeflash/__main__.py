@@ -95,7 +95,7 @@ def run():
         "--model",
         action="store",
         type=str,
-        choices={"AP3710", "AP3715", "AP3825"},
+        choices=["AP3710", "AP3715", "AP3825"],
         default="AP3710",
         help="The model of the Extreme Networks or Enterasys access point that should be flashed.",
         required=False,
