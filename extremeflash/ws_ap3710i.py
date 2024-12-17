@@ -130,7 +130,13 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
             f"Unexpected Model {None if model is None else model.group(1)} found. Aborting to not harm device."
         )
 
-    boot_openwrt_params = b"setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000"
+    # https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=ebddc5f984a240980303aed68524eb615484eef8
+    boot_openwrt_params = b"setenv boot_openwrt 'setenv bootargs; bootm 0xbf230000'"
+    # tftpboot 0x85000000; bootm'
+
+    # https://github.com/openwrt/openwrt/commit/e16a0e7e8876df0a92ec4779fe766de1a943307a
+    boot_openwrt_params = b"setenv boot_openwrt 'sf probe; sf read 0x88000000 0x280000 0xc00000; bootm 0x88000000'"
+    #boot_openwrt_params = b"setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000"
     if "boot_openwrt" in printenv_return:
         logging.debug("Found existing U-Boot boot_openwrt parameter. Verifying.")
         existing_boot_openwrt_params = re.search(r"boot_openwrt=(.*)\r\n", printenv_return)
