@@ -6,9 +6,7 @@ import logging
 
 import serial
 
-from .ws_ap3710i import main as main_ap3710i
-from .ws_ap3715i import main as main_ap3715i
-from .ws_ap3825i import main as main_ap3825i
+from .ws import main, SUPPORTED_DEVICES
 
 
 def test_serial_port(potential_serial_port):
@@ -95,7 +93,7 @@ def run():
         "--model",
         action="store",
         type=str,
-        choices=["AP3710", "AP3715", "AP3805", "AP3825", "AP3915"],
+        choices=SUPPORTED_DEVICES,
         default="AP3710",
         help="The model of the Extreme Networks or Enterasys access point that should be flashed.",
         required=False,
@@ -114,15 +112,6 @@ def run():
     serial_port = args.port
     if not args.port:
         serial_port = find_serial_port()
-
-    main = None
-    if args.model == "AP3710":
-        main = main_ap3710i
-    elif args.model == "AP3715":
-        main = main_ap3715i
-    elif args.model == "AP3825":
-        main = main_ap3825i
-
     main(serial_port, args.initramfs, args.image, args.local_ip, args.ap_ip, args.dryrun)
 
 
