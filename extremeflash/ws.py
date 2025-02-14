@@ -58,7 +58,10 @@ SUPPORTED_DEVICES = [
 #  See .helpers file for implementation details
 
 
-def bootup_set_boot_openwrt(ser: serial.Serial) -> str:
+def bootup_set_boot_openwrt(
+        ser: serial.Serial,
+        dryrun: bool = False,
+    ) -> str:
     #    if not event_keep_serial_active.is_set():
     #        return ""
     ser.write(b"printenv\n")
@@ -131,7 +134,7 @@ def bootup_set_boot_openwrt(ser: serial.Serial) -> str:
     write_to_serial(ser, b'setenv bootcmd "run boot_openwrt"\n')
     time.sleep(0.5)
 
-    if helpers.DRYRUN:
+    if dryrun:
         logging.info("dryrun: Skipping saveenv")
         return ""
 
@@ -242,6 +245,7 @@ def start_tftp_boot_via_serial(
     tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
     tftp_file: str,
     new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+    dryrun: bool = False,
 ):
     with serial.Serial(port=name, baudrate=115200, timeout=30) as ser:
         logging.info(f"Starting to connect to serial port {ser.name}")
@@ -250,7 +254,7 @@ def start_tftp_boot_via_serial(
         bootup_interrupt(ser)
         bootup_login(ser)
         bootup_login_verification(ser)
-        model = bootup_set_boot_openwrt(ser)
+        model = bootup_set_boot_openwrt(ser, dryrun)
         boot_via_tftp(ser, tftp_ip, tftp_file, new_ap_ip, model)
         boot_wait_for_brlan(ser)
         boot_set_ips(ser, new_ap_ip)
@@ -266,8 +270,6 @@ def main(
     ap_ip: Optional[str] = None,
     dryrun: bool = False,
 ):
-    # TODO: improve DRYRUN
-    helpers.DRYRUN = dryrun
 
     ap_ip_interface, local_ip_interface = setting_up_ips(local_ip, ap_ip)
 
@@ -281,10 +283,10 @@ def main(
     try:
         serial_thread = Thread(
             target=start_tftp_boot_via_serial,
-            args=[serial_port, local_ip_interface, initramfs_path.name, ap_ip_interface],
+            args=[serial_port, local_ip_interface, initramfs_path.name, ap_ip_interface, dryrun],
             daemon=True,
         )
-        ssh_thread = Thread(target=start_ssh, args=[sysupgrade_path, str(ap_ip_interface.ip)])
+        ssh_thread = Thread(target=start_ssh, args=[sysupgrade_path, str(ap_ip_interface.ip), dryrun])
         logging.debug("Starting serial thread")
         serial_thread.start()
         logging.debug("Starting ssh thread")
