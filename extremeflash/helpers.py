@@ -140,7 +140,9 @@ def boot_wait_for_brlan(ser: serial.Serial):
     while event_keep_serial_active.is_set():
         line = readline_from_serial(ser)
 
-        if "br-lan: link becomes ready" in line:
+        if "br-lan: link becomes ready" in line or (  # OpenWRT 22.10 and earlier
+            "br-lan: port" in line and "entered forwarding state" in line  # OpenWRT 24.10 and later
+        ):
             logging.info("br-lan is ready.")
             time.sleep(
                 2
