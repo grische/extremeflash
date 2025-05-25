@@ -53,6 +53,7 @@ SUPPORTED_DEVICES = [
     "AP3715i",
     "AP3825i",
     "AP3915i",
+    "AP3935i",
 ]
 
 #  See .helpers file for implementation details
@@ -107,6 +108,9 @@ def bootup_set_boot_openwrt(
         #boot_openwrt_params = b"setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000"
     elif model == "AP3805i":
         boot_openwrt_params = "setenv boot_openwrt 'setenv bootargs; bootm 0xa1280000'"
+    elif model == "AP3935i":
+        # https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=3aef61060e3f51aa43fe494d5ff173e81dd43003
+        boot_openwrt_params = b"setenv boot_openwrt 'bootm 0x42000000'"
     else:
         boot_openwrt_params = ""
 
@@ -177,6 +181,8 @@ def boot_via_tftp(
         write_to_serial(ser, b"tftpboot 0x86000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
     elif model == "AP3805i":
         write_to_serial(ser, b"tftpboot 0x89000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
+    elif model == "AP3935i":
+        write_to_serial(ser, b"tftpboot 0x42000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
     else:
         # AP3815i, AP3805i
         write_to_serial(ser, b"tftpboot 0x2000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
@@ -206,7 +212,7 @@ def boot_via_tftp(
         # See https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=765f66810a3324cc35fa6471ee8eeee335ba8c2b
         write_to_serial(ser, b"bootm\n", sleep=0.1)
 
-        
+
     max_retries = 2
     cur_retries = 0
     while event_keep_serial_active.is_set():
