@@ -62,22 +62,29 @@ def debug_serial(string: str):
 
 
 def bootup_interrupt(ser: serial.Serial):
-    while event_keep_serial_active.is_set():
-        line = readline_from_serial(ser)
+    bootlog_buffer = ""
 
-        # These lines probably only works with custom Enterasys U-Boot v2009.11.10
-        # TODO: add support for other / newer versions of U-Boot
-        if (
-            "### JFFS2 load complete" in line  # stock firmware message
-            or "### JFFS2 LOAD ERROR" in line  # OpenWRT message :-|
-        ):
+    while event_keep_serial_active.is_set():
+        time.sleep(0.01)
+        if ser.in_waiting == 0:
+            continue
+
+        new_data = ser.read(ser.in_waiting).decode("ascii")
+        bootlog_buffer += new_data
+
+        # Only print full lines to debug output
+        while "\n" in bootlog_buffer:
+            line_end = bootlog_buffer.find("\n") + 1
+            debug_serial(bootlog_buffer[:line_end])
+            bootlog_buffer = bootlog_buffer[line_end:]
+
+        if "Hit 'd' for diagnostics" in bootlog_buffer:
             text = b"x"  # send interrupt key
-            logging.info(f"JFFS2 load done. Sending interrupt key {text.decode()}.")
+            debug_serial(bootlog_buffer)  # print remaining debug buffer
+            logging.info(f"Sending interrupt key {text.decode()} to enter Boot prompt.")
             time.sleep(0.5)  # sleep 500ms
             ser.write(text)
             break
-
-        time.sleep(0.01)
 
 
 def bootup_login(ser: serial.Serial):
