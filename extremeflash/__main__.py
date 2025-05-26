@@ -49,7 +49,7 @@ def run():
     # parser_group_force.add_argument("-f", "--force", action="store_true",
     #                                 help="Ignore any safeguards. WARNING: This can be destructive.")
 
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable debugging output")
+    parser.add_argument("-v", "--verbose", "--debug", action="store_true", help="Enable debugging output")
     parser.add_argument(
         "-p",
         "--port",
