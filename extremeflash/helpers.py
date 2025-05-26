@@ -67,7 +67,11 @@ def bootup_interrupt(ser: serial.Serial):
         if ser.in_waiting == 0:
             continue
 
-        new_data = ser.read(ser.in_waiting).decode("ascii")
+        try:
+            new_data = ser.read(ser.in_waiting).decode("ascii")
+        except UnicodeDecodeError as e:
+            logging.warning(f"Failed to decode serial data: {e}")
+            new_data = str(ser.read(ser.in_waiting))
         bootlog_buffer += new_data
 
         # Only print full lines to debug output
