@@ -140,7 +140,7 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
         if boot_openwrt_params.decode("ascii") != existing_boot_openwrt_params.group(1):
             error_message = f"""
                     Aborting. Unexpected param for "boot_openwrt" found.
-                    Found: "{existing_boot_openwrt_params}"
+                    Found: "{existing_boot_openwrt_params.group(0)}"
                     Expected: "{boot_openwrt_params.decode("ascii")}"
                 """
             raise RuntimeError(error_message)

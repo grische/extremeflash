@@ -86,7 +86,7 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
 
         if boot_openwrt_params.decode("ascii") != existing_boot_openwrt_params.group(1):
             # Some AP3825i had wrong and/or outdated boot_openwrt parameters in the past.
-            logging.warning(f"Overwriting unexpected param for 'boot_openwrt': {existing_boot_openwrt_params}")
+            logging.warning(f"Overwriting unexpected param for 'boot_openwrt': {existing_boot_openwrt_params.group(0)}")
         else:
             # do not set anything if we found boot_openwrt
             # TODO: should we check if bootcmd is also set correctly?
