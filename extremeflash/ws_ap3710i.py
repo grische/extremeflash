@@ -460,8 +460,11 @@ def ip_address_fix_prefix(
             raise ValueError(f"Invalid IP interface received {type(ip_interface)}")
 
         logging.warning(
-            f"Received too small network prefix {ip_interface.network.prefixlen} for {ip_interface}. "
-            + f"Assuming {ip_interface.ip}/{new_prefix}."
+            "Received too small network prefix %s for %s. Assuming %s/%s.",
+            ip_interface.network.prefixlen,
+            ip_interface,
+            ip_interface.ip,
+            new_prefix,
         )
         ip_interface = ipaddress.ip_interface(f"{ip_interface.ip}/{new_prefix}")
     elif ip_interface.network.prefixlen == ip_interface.network.max_prefixlen - 1:  # we need at least two IPs+broadcast
