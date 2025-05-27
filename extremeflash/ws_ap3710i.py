@@ -354,8 +354,8 @@ def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = "192.168.1.1"):
         firmware_target_path = "/tmp/firmware.bin"
 
         # Basic OpenWRT only supports SCP, not SFTP
-        with scp.SCPClient(transport) as scp:
-            scp.put(sysupgrade_firmware_path, firmware_target_path)
+        with scp.SCPClient(transport) as scp_client:
+            scp_client.put(sysupgrade_firmware_path, firmware_target_path)
 
         with transport.open_session() as chan:
             sysupgrade_command = "sysupgrade -n " + firmware_target_path
