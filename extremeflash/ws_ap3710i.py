@@ -111,6 +111,12 @@ def bootup_login(ser: serial.Serial):
 
 def bootup_login_verification(ser: serial.Serial):
     prompt_string = "Boot (PRI)->"
+    prompt_string_backup = "Boot (BAK)->"
+    # The assertion ensures that both prompt strings have the same length, which is crucial
+    # for the buffer reading logic in the loop below. If the strings had different lengths,
+    # the code might not read enough bytes from the buffer to recognize either prompt or
+    # might not receive enough bytes to ever continue.
+    assert len(prompt_string_backup) == len(prompt_string)
     # Reading byte by byte because there is no linebreak after the prompt
     while event_keep_serial_active.is_set():
         # only read chars if there are enough bytes in wait from the buffer
@@ -118,7 +124,7 @@ def bootup_login_verification(ser: serial.Serial):
             chars = ser.read(ser.in_waiting).decode("ascii")
             debug_serial(chars)
 
-            if prompt_string in chars:
+            if prompt_string in chars or prompt_string_backup in chars:
                 logging.info("U-Boot login successful!")
                 break
 
