@@ -200,7 +200,7 @@ def readline_from_serial(ser: serial.Serial) -> str:
     return line
 
 
-def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = "192.168.1.1", dryrun: bool=False):
+def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = "192.168.1.1", dryrun: bool = False):
     logging.info("SSH waiting for ready signal.")
     event_ssh_ready.wait()
     if event_abort_ssh.is_set():

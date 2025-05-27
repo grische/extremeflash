@@ -24,7 +24,7 @@ import time
 from threading import Thread
 from typing import Optional
 
-import serial # pyserial
+import serial
 
 from .tftp_server import TftpServer
 
@@ -45,36 +45,34 @@ from .helpers import (
     event_keep_serial_active,
     event_ssh_ready,
 )
-from extremeflash import helpers
 
 SUPPORTED_DEVICES = [
     "AP3705i",
     "AP3710i",
     "AP3715i",
+    "AP3805i",
     "AP3825i",
     "AP3915i",
 ]
 
-#  See .helpers file for implementation details
-
 
 def bootup_set_boot_openwrt(
         ser: serial.Serial,
-        dryrun: bool = False,
-    ) -> str:
+        dryrun: bool = False
+) -> str:
     #    if not event_keep_serial_active.is_set():
     #        return ""
     ser.write(b"printenv\n")
     time.sleep(1)
     printenv_return = ser.read(ser.in_waiting).decode("ascii")
     debug_serial(printenv_return)
-    model = re.search(r"MODEL=(.*)\r\n", printenv_return)
+    model_regex = re.search(r"MODEL=(.*)\r\n", printenv_return)
+    if model_regex is None:
+        raise RuntimeWarning("no MODEL name found in printenv")
+    model = model_regex.group(1)
 
     if model not in SUPPORTED_DEVICES:
-        model = re.search(r"MODEL=(.*)\r\n", printenv_return)
-        raise RuntimeWarning(
-            f"Unexpected Model {None if model is None else model.group(1)} found. Aborting to not harm device."
-        )
+        raise RuntimeWarning(f"Unexpected Model {model} found. Aborting to not harm device.")
 
     if model == "AP3825i":
         # From https://forum.darmstadt.freifunk.net/t/flashing-of-the-extreme-networks-ws-ap3825i/923
@@ -104,12 +102,11 @@ def bootup_set_boot_openwrt(
     elif model == "AP3915i":
         # https://github.com/openwrt/openwrt/commit/e16a0e7e8876df0a92ec4779fe766de1a943307a
         boot_openwrt_params = b"setenv boot_openwrt 'sf probe; sf read 0x88000000 0x280000 0xc00000; bootm 0x88000000'"
-        #boot_openwrt_params = b"setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000"
+        # boot_openwrt_params = b"setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000"
     elif model == "AP3805i":
-        boot_openwrt_params = "setenv boot_openwrt 'setenv bootargs; bootm 0xa1280000'"
+        boot_openwrt_params = b"setenv boot_openwrt 'setenv bootargs; bootm 0xa1280000'"
     else:
-        boot_openwrt_params = ""
-
+        boot_openwrt_params = b""
 
     if "boot_openwrt" in printenv_return:
         logging.debug("Found existing U-Boot boot_openwrt parameter. Verifying.")
@@ -158,7 +155,7 @@ def boot_via_tftp(
     tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
     tftp_file: str,
     new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
-    model: str
+    model: str,
 ):
     new_ap_ip_str = str(new_ap_ip.ip).encode("ascii")
     new_ap_netmask_str = str(new_ap_ip.netmask).encode("ascii")
@@ -173,12 +170,10 @@ def boot_via_tftp(
         write_to_serial(ser, b"tftpboot 0x1000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
     elif model == "AP3915i":
         write_to_serial(ser, b"tftpboot 0x86000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
-    elif model == "AP3915i":
-        write_to_serial(ser, b"tftpboot 0x86000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
     elif model == "AP3805i":
         write_to_serial(ser, b"tftpboot 0x89000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
     else:
-        # AP3815i, AP3805i
+        # AP3815i, AP3825i
         write_to_serial(ser, b"tftpboot 0x2000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
     # wait until TFTP transfer is complete
     while event_keep_serial_active.is_set():
@@ -206,7 +201,6 @@ def boot_via_tftp(
         # See https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=765f66810a3324cc35fa6471ee8eeee335ba8c2b
         write_to_serial(ser, b"bootm\n", sleep=0.1)
 
-        
     max_retries = 2
     cur_retries = 0
     while event_keep_serial_active.is_set():
@@ -237,7 +231,6 @@ def boot_via_tftp(
             break
 
         time.sleep(0.01)
-
 
 
 def start_tftp_boot_via_serial(
