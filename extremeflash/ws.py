@@ -135,6 +135,7 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
     for msg in ["Writing to Flash", "Writing to NAND", "Writing to redundant NAND"]:
         if msg in saveenv_return:
             save_env_success = True
+            break
     if not save_env_success:
         raise RuntimeError("saveenv did not successfully write to flash")
 
