@@ -17,16 +17,13 @@
 """This tool allows flashing Enterasys WS-AP3710i access points fully automatically, using OpenWRT's initramfs image."""
 import ipaddress
 import logging
-import pathlib
-import re
 import time
-from threading import Event, Thread
+from threading import Event
 from typing import Optional
 
 import paramiko
 import serial
-
-from .tftp_server import TftpServer
+import scp
 
 DRYRUN = False
 #
@@ -133,58 +130,6 @@ def bootup_login_verification(ser: serial.Serial):
         time.sleep(0.01)
 
 
-def bootup_set_boot_openwrt(ser: serial.Serial):
-    if not event_keep_serial_active.is_set():
-        return
-    ser.write(b"printenv\n")
-    time.sleep(1)
-    printenv_return = ser.read(ser.in_waiting).decode("ascii")
-    debug_serial(printenv_return)
-
-    if "MODEL=AP3710i" not in printenv_return:
-        model = re.search(r"MODEL=(.*)\r\n", printenv_return)
-        raise RuntimeWarning(
-            f"Unexpected Model {None if model is None else model.group(1)} found. Aborting to not harm device."
-        )
-
-    boot_openwrt_params = b"setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000"
-    if "boot_openwrt" in printenv_return:
-        logging.debug("Found existing U-Boot boot_openwrt parameter. Verifying.")
-        existing_boot_openwrt_params = re.search(r"boot_openwrt=(.*)\r\n", printenv_return)
-        if not existing_boot_openwrt_params:
-            raise RuntimeError("Unable to parse detected boot_openwrt paramter")
-
-        if boot_openwrt_params.decode("ascii") != existing_boot_openwrt_params.group(1):
-            error_message = f"""
-                    Aborting. Unexpected param for "boot_openwrt" found.
-                    Found: "{existing_boot_openwrt_params.group(0)}"
-                    Expected: "{boot_openwrt_params.decode("ascii")}"
-                """
-            raise RuntimeError(error_message)
-
-        logging.debug("Existing U-Boot boot_openwrt parameter looks good.")
-
-    else:
-        logging.info("Did not find boot_openwrt in U-Boot parameters. Setting it.")
-        write_to_serial(ser, b'setenv boot_openwrt "' + boot_openwrt_params + b'"\n')
-        time.sleep(0.5)
-
-        write_to_serial(ser, b'setenv bootcmd "run boot_openwrt"\n')
-        time.sleep(0.5)
-
-        if DRYRUN:
-            logging.info("dryrun: Skipping saveenv")
-            return
-
-        ser.write(b"saveenv\n")
-        time.sleep(2)
-        saveenv_return = ser.read(ser.in_waiting).decode("ascii")
-        debug_serial(saveenv_return)
-
-        if "Writing to Flash" not in saveenv_return:
-            raise RuntimeError("saveenv did not successfully write to flash")
-
-
 def is_kernel_booting(line):
     if "## Booting kernel from FIT Image at" in line:  # with U-Boot v2009.x
         # https://github.com/u-boot/u-boot/blob/f20393c5e787b3776c179d20f82a86bda124d651/common/cmd_bootm.c#L897
@@ -201,54 +146,6 @@ def is_kernel_booting(line):
         return True
 
     return False
-
-
-def boot_via_tftp(
-    ser: serial.Serial,
-    tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
-    tftp_file: str,
-    new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
-):
-    new_ap_ip_str = str(new_ap_ip.ip).encode("ascii")
-    new_ap_netmask_str = str(new_ap_ip.netmask).encode("ascii")
-    tftp_ip_str = str(tftp_ip.ip).encode("ascii")
-
-    write_to_serial(ser, b"setenv ipaddr " + new_ap_ip_str + b"\n")
-    write_to_serial(ser, b"setenv netmask " + new_ap_netmask_str + b"\n")
-    write_to_serial(ser, b"setenv serverip " + tftp_ip_str + b"\n")
-    write_to_serial(ser, b"setenv gatewayip " + tftp_ip_str + b"\n")
-    logging.info("Starting TFTP Boot.")
-    write_to_serial(ser, b"tftpboot 0x1000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"; bootm\n")
-    max_retries = 2
-    cur_retries = 0
-    while event_keep_serial_active.is_set():
-        line = readline_from_serial(ser)
-
-        if "Retry count exceeded" in line:  # TFTP boot failed
-            # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/net/tftp.c#L704
-            logging.warning(f"Failed booting from TFTP (attempt #{cur_retries}): {line}")
-            cur_retries = cur_retries + 1
-            if cur_retries > max_retries:
-                write_to_serial(ser, b"\x03")
-                raise RuntimeError(f"Maximum TFTP retries {max_retries} reached. Aborting")
-
-        elif "Wrong Image Format for bootm command" in line:
-            # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/bootm.c#L974
-            # do not trigger any other condition, simply retyry when wrong image format was found
-            logging.error("TFTP boot found wrong image format")
-
-        elif "ERROR: can't get kernel image!" in line:
-            # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/bootm.c#L123
-            logging.error("Unable to boot initramfs file. Check you provided the correct file. Aborting.")
-            import os
-
-            # pylint: disable=protected-access
-            os._exit(1)
-
-        elif is_kernel_booting(line):
-            break
-
-        time.sleep(0.01)
 
 
 def boot_wait_for_brlan(ser: serial.Serial):
@@ -293,27 +190,6 @@ def keep_logging_until_reboot(ser: serial.Serial):
         time.sleep(0.05)
 
 
-def start_tftp_boot_via_serial(
-    name: str,
-    tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
-    tftp_file: str,
-    new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
-):
-    with serial.Serial(port=name, baudrate=115200, timeout=30) as ser:
-        logging.info(f"Starting to connect to serial port {ser.name}")
-        event_keep_serial_active.set()
-
-        bootup_interrupt(ser)
-        bootup_login(ser)
-        bootup_login_verification(ser)
-        bootup_set_boot_openwrt(ser)
-        boot_via_tftp(ser, tftp_ip, tftp_file, new_ap_ip)
-        boot_wait_for_brlan(ser)
-        boot_set_ips(ser, new_ap_ip)
-        event_ssh_ready.set()
-        keep_logging_until_reboot(ser)
-
-
 def write_to_serial(ser: serial.Serial, text: bytes, sleep: float = 0) -> str:
     ser.write(text)
     if sleep > 0:
@@ -338,9 +214,7 @@ def readline_from_serial(ser: serial.Serial) -> str:
     return line
 
 
-def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = "192.168.1.1"):
-    import scp
-
+def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = "192.168.1.1", dryrun: bool = False):
     logging.info("SSH waiting for ready signal.")
     event_ssh_ready.wait()
     if event_abort_ssh.is_set():
@@ -359,7 +233,7 @@ def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = "192.168.1.1"):
 
         with transport.open_session() as chan:
             sysupgrade_command = "sysupgrade -n " + firmware_target_path
-            if DRYRUN:
+            if dryrun:
                 logging.info("dryrun: running sysupgrade with test and rebooting")
                 sysupgrade_command = sysupgrade_command.replace("sysupgrade", "sysupgrade --test")
                 sysupgrade_command = sysupgrade_command + " && reboot"
@@ -391,56 +265,6 @@ def post_cleanup(tftp_server, ssh_thread, serial_thread):
     if tftp_server and tftp_server.is_alive():
         logging.debug("Stopping TFTP server.")
         tftp_server.stop()  # set now=True to force shutdown
-
-
-def main(
-    serial_port: str,
-    initramfs_path_str: str,
-    sysupgrade_path_str: str,
-    local_ip: str,
-    ap_ip: Optional[str] = None,
-    dryrun: bool = False,
-):
-    # TODO: improve DRYRUN
-    global DRYRUN
-    DRYRUN = dryrun
-
-    ap_ip_interface, local_ip_interface = setting_up_ips(local_ip, ap_ip)
-
-    initramfs_path = pathlib.Path(initramfs_path_str)
-    sysupgrade_path = pathlib.Path(sysupgrade_path_str)
-
-    tftp_server = TftpServer(initramfs_path_str, listenip=str(local_ip_interface.ip))
-    tftp_server.start()
-    serial_thread = None
-    ssh_thread = None
-    try:
-        serial_thread = Thread(
-            target=start_tftp_boot_via_serial,
-            args=[serial_port, local_ip_interface, initramfs_path.name, ap_ip_interface],
-            daemon=True,
-        )
-        ssh_thread = Thread(target=start_ssh, args=[sysupgrade_path, str(ap_ip_interface.ip)])
-        logging.debug("Starting serial thread")
-        serial_thread.start()
-        logging.debug("Starting ssh thread")
-        ssh_thread.start()
-
-        logging.debug("Waiting for ssh thread")
-        # Strange workaround to allow ctrl+c or system stop events during a join()
-        while ssh_thread.is_alive():
-            ssh_thread.join(5)  # wait for SSH to conclude its actions
-
-        logging.debug("Waiting for serial thread")
-        # Strange workaround to allow ctrl+c or system stop events during a join()
-        while serial_thread.is_alive():
-            serial_thread.join(5)
-
-        logging.info("All steps finished. Give the AP some time to reboot and then access it on http://192.168.1.1")
-    except (KeyboardInterrupt, SystemExit, SystemError):
-        logging.warning("Aborting main process")
-    finally:
-        post_cleanup(tftp_server, ssh_thread, serial_thread)
 
 
 def setting_up_ips(local_ip: str, ap_ip_str: Optional[str] = None):
