@@ -64,6 +64,10 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
         raise RuntimeWarning("no MODEL name found in printenv")
     model = model_regex.group(1)
 
+    # AP3935i exists with postfixes: -FCC, -IL und -ROW
+    if "AP3935i-" in model:
+        model = "AP3935i"
+
     if model not in SUPPORTED_DEVICES:
         raise RuntimeWarning(f"Unexpected Model {model} found. Aborting to not harm device.")
 
