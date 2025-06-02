@@ -6,7 +6,7 @@ import logging
 
 import serial
 
-from .ws import main, SUPPORTED_DEVICES
+from .ws import main, SUPPORTED_MODELS
 
 
 def test_serial_port(potential_serial_port):
@@ -93,7 +93,7 @@ def run():
         "--model",
         action="store",
         type=str,
-        choices=SUPPORTED_DEVICES,
+        choices=SUPPORTED_MODELS,
         default="AP3710",
         help="The model of the Extreme Networks or Enterasys access point that should be flashed.",
         required=False,

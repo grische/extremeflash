@@ -46,11 +46,11 @@ from .helpers import (
     event_ssh_ready,
 )
 
-SUPPORTED_DEVICES = [
-    "AP3710i",
-    "AP3715i",
-    "AP3825i",
-    "AP3935i",
+SUPPORTED_MODELS = [
+    "AP3710",
+    "AP3715",
+    "AP3825",
+    "AP3935",
 ]
 
 
@@ -62,16 +62,21 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
     model_regex = re.search(r"MODEL=(.*)\r\n", printenv_return)
     if model_regex is None:
         raise RuntimeWarning("no MODEL name found in printenv")
-    model = model_regex.group(1)
+    full_model_name = model_regex.group(1)
+    model = None
 
-    # AP3935i exists with postfixes: -FCC, -IL und -ROW
-    if "AP3935i-" in model:
-        model = "AP3935i"
+    for model_to_check in SUPPORTED_MODELS:
+        # check if name of model is substring of the model name with suffix
+        if model_to_check in full_model_name:
+            # AP3935i exists with postfixes: -FCC, -IL und -ROW
+            # see https://github.com/grische/extremeflash/pull/56/files#r2118170572
+            model = model_to_check
+            break
 
-    if model not in SUPPORTED_DEVICES:
-        raise RuntimeWarning(f"Unexpected Model {model} found. Aborting to not harm device.")
+    if model is None:
+        raise RuntimeWarning(f"Unexpected Model {full_model_name} found. Aborting to not harm device.")
 
-    if model == "AP3825i":
+    if model == "AP3825":
         # From https://forum.darmstadt.freifunk.net/t/flashing-of-the-extreme-networks-ws-ap3825i/923
         boot_openwrt_params = (
             b"cp.b 0xEC000000 0x2000000 0x2000000;"
@@ -88,11 +93,11 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
             b"bootm prep;"
             b"bootm go;"
         )
-    elif model == "AP3715i":
+    elif model == "AP3715":
         boot_openwrt_params = b"sf probe 0;" b"sf read 0x2000000 0x140000 0x1000000;" b"bootm 0x2000000;"
-    elif model == "AP3710i":
+    elif model == "AP3710":
         boot_openwrt_params = b"setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000"
-    elif model == "AP3935i":
+    elif model == "AP3935":
         # https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=3aef61060e3f51aa43fe494d5ff173e81dd43003
         boot_openwrt_params = b"sf probe 0; sf read 0x41500000 0x003c0000 0x00e10000; bootm 0x41500000"
     else:
@@ -126,7 +131,7 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
         return ""
 
     ser.write(b"saveenv\n")
-    if model == "AP3715i":
+    if model == "AP3715":
         time.sleep(6)  # AP3715i has a considerably longer savetime in comparison to others
     else:
         time.sleep(2)
@@ -162,11 +167,11 @@ def boot_via_tftp(
     write_to_serial(ser, b"setenv serverip " + tftp_ip_str + b"\n")
     write_to_serial(ser, b"setenv gatewayip " + tftp_ip_str + b"\n")
     logging.info("Did setup TFTP Boot.")
-    if model == "AP3710i":
+    if model == "AP3710":
         write_to_serial(ser, b"tftpboot 0x1000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
-    elif model == "AP3935i":
+    elif model == "AP3935":
         write_to_serial(ser, b"tftpboot 0x42000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
-    elif model == "AP3825i":
+    elif model == "AP3825":
         write_to_serial(ser, b"tftpboot 0x2000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
     else:
         raise RuntimeError(f"Unknown model {model}")
@@ -177,7 +182,7 @@ def boot_via_tftp(
         if "Bytes transferred" in line:
             time.sleep(1)
             break
-    if model == "AP3825i":
+    if model == "AP3825":
         # Note: We must step through the `bootm` process manually to avoid fdt relocation.
         # https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=7e614820a89208c4e91a3a5f9de07a5402accdaa
         write_to_serial(ser, b"interrupts off\n")
@@ -188,14 +193,14 @@ def boot_via_tftp(
         write_to_serial(ser, b"fdt chosen\n", sleep=0.1)
         write_to_serial(ser, b"bootm prep\n", sleep=0.1)
         write_to_serial(ser, b"bootm go\n", sleep=0.1)
-    elif model == "AP3935i":
+    elif model == "AP3935":
         # Note: We must step through the `bootm` process manually to avoid fdt relocation.
         # https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=3aef61060e3f51aa43fe494d5ff173e81dd43003
         write_to_serial(ser, b"bootm start 0x42000000\n", sleep=0.2)
         write_to_serial(ser, b"bootm loados\n", sleep=2)
         write_to_serial(ser, b"bootm prep\n", sleep=0.1)
         write_to_serial(ser, b"bootm go\n", sleep=0.1)
-    elif model in ["AP3715i", "AP3710i"]:
+    elif model in ["AP3715", "AP3710"]:
         # See https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=765f66810a3324cc35fa6471ee8eeee335ba8c2b
         write_to_serial(ser, b"bootm\n", sleep=0.1)
 
