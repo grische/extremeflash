@@ -63,6 +63,8 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
     if model_regex is None:
         raise RuntimeWarning("no MODEL name found in printenv")
     full_model_name = model_regex.group(1)
+
+    logging.debug("full model name is: %s", full_model_name)
     model = None
 
     for model_to_check in SUPPORTED_MODELS:
@@ -75,6 +77,8 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
 
     if model is None:
         raise RuntimeWarning(f"Unexpected Model {full_model_name} found. Aborting to not harm device.")
+
+    logging.debug("model found: %s", model)
 
     if model == "AP3825":
         # From https://forum.darmstadt.freifunk.net/t/flashing-of-the-extreme-networks-ws-ap3825i/923
