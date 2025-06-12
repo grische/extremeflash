@@ -54,12 +54,8 @@ SUPPORTED_MODELS = [
 ]
 
 
-def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
-    ser.write(b"printenv\n")
-    time.sleep(1)
-    printenv_return = ser.read(ser.in_waiting).decode("ascii")
-    debug_serial(printenv_return)
-    model_regex = re.search(r"MODEL=(.*)\r\n", printenv_return)
+def get_model_name_from_printenv(printenv: str):
+    model_regex = re.search(r"MODEL=(.*)\r\n", printenv)
     if model_regex is None:
         raise RuntimeWarning("no MODEL name found in printenv")
     full_model_name = model_regex.group(1)
@@ -79,6 +75,15 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
         raise RuntimeWarning(f"Unexpected Model {full_model_name} found. Aborting to not harm device.")
 
     logging.debug("model found: %s", model)
+    return model
+
+
+def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
+    ser.write(b"printenv\n")
+    time.sleep(1)
+    printenv_return = ser.read(ser.in_waiting).decode("ascii")
+    debug_serial(printenv_return)
+    model = get_model_name_from_printenv(printenv_return)
 
     if model == "AP3825":
         # From https://forum.darmstadt.freifunk.net/t/flashing-of-the-extreme-networks-ws-ap3825i/923
@@ -120,7 +125,7 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
             # do not set anything if we found boot_openwrt
             # TODO: should we check if bootcmd is also set correctly?
             logging.debug("Existing U-Boot boot_openwrt parameter looks good.")
-            return ""
+            return model
     else:
         logging.info("Did not find boot_openwrt in U-Boot parameters. Setting it.")
 
@@ -132,7 +137,7 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
 
     if dryrun:
         logging.info("dryrun: Skipping saveenv")
-        return ""
+        return model
 
     ser.write(b"saveenv\n")
     if model == "AP3715":
