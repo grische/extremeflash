@@ -21,7 +21,7 @@ import pathlib
 import re
 import time
 from threading import Event, Thread
-from typing import Optional
+from typing import Optional, Union
 
 import paramiko
 import serial
@@ -205,9 +205,9 @@ def is_kernel_booting(line):
 
 def boot_via_tftp(
     ser: serial.Serial,
-    tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+    tftp_ip: Union[ipaddress.IPv4Interface, ipaddress.IPv6Interface],
     tftp_file: str,
-    new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+    new_ap_ip: Union[ipaddress.IPv4Interface, ipaddress.IPv6Interface],
 ):
     new_ap_ip_str = str(new_ap_ip.ip).encode("ascii")
     new_ap_netmask_str = str(new_ap_ip.netmask).encode("ascii")
@@ -295,9 +295,9 @@ def keep_logging_until_reboot(ser: serial.Serial):
 
 def start_tftp_boot_via_serial(
     name: str,
-    tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+    tftp_ip: Union[ipaddress.IPv4Interface, ipaddress.IPv6Interface],
     tftp_file: str,
-    new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+    new_ap_ip: Union[ipaddress.IPv4Interface, ipaddress.IPv6Interface],
 ):
     with serial.Serial(port=name, baudrate=115200, timeout=30) as ser:
         logging.info(f"Starting to connect to serial port {ser.name}")
@@ -466,8 +466,8 @@ def setting_up_ips(local_ip: str, ap_ip_str: Optional[str] = None):
 
 
 def ip_address_fix_prefix(
-    ip_interface: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
-) -> ipaddress.IPv4Interface | ipaddress.IPv6Interface:
+    ip_interface: Union[ipaddress.IPv4Interface, ipaddress.IPv6Interface],
+) -> Union[ipaddress.IPv4Interface, ipaddress.IPv6Interface]:
     if ip_interface.network.prefixlen == ip_interface.network.max_prefixlen:  # probably forgot to specify network
         if isinstance(ip_interface, ipaddress.IPv4Interface):
             new_prefix = 24

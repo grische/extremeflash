@@ -22,7 +22,7 @@ import pathlib
 import re
 import time
 from threading import Thread
-from typing import Optional
+from typing import Optional, Union
 
 import serial
 
@@ -102,9 +102,9 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
 
 def boot_via_tftp(
     ser: serial.Serial,
-    tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+    tftp_ip: Union[ipaddress.IPv4Interface, ipaddress.IPv6Interface],
     tftp_file: str,
-    new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+    new_ap_ip: Union[ipaddress.IPv4Interface, ipaddress.IPv6Interface],
 ):
     new_ap_ip_str = str(new_ap_ip.ip).encode("ascii")
     new_ap_netmask_str = str(new_ap_ip.netmask).encode("ascii")
@@ -159,9 +159,9 @@ def boot_via_tftp(
 
 def start_tftp_boot_via_serial(
     name: str,
-    tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+    tftp_ip: Union[ipaddress.IPv4Interface, ipaddress.IPv6Interface],
     tftp_file: str,
-    new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+    new_ap_ip: Union[ipaddress.IPv4Interface, ipaddress.IPv6Interface],
 ):
     with serial.Serial(port=name, baudrate=115200, timeout=30) as ser:
         logging.info(f"Starting to connect to serial port {ser.name}")
