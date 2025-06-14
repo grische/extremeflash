@@ -60,7 +60,7 @@ def get_model_name_from_printenv(printenv: str):
         raise RuntimeWarning("no MODEL name found in printenv")
     full_model_name = model_regex.group(1)
 
-    logging.debug("full model name is: %s", full_model_name)
+    logging.info("full model name is: %s", full_model_name)
     model = None
 
     for model_to_check in SUPPORTED_MODELS:
@@ -242,6 +242,7 @@ def boot_via_tftp(
             os._exit(1)
 
         elif is_kernel_booting(line):
+            logging.info("Booting Linux kernel in RAM")
             break
 
         time.sleep(0.01)
