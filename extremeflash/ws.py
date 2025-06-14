@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-#     Copyright (C) 2025 istrator²
+#     Copyright (C) 2023 Grische
 #
 #     This program is free software: you can redistribute it and/or modify
 #     it under the terms of the GNU General Public License as published by
@@ -27,8 +27,8 @@ from typing import Optional
 import serial
 
 from .tftp_server import TftpServer
-from . import ws_ap3710i
-from .ws_ap3710i import (
+
+from .helpers import (
     boot_set_ips,
     boot_wait_for_brlan,
     bootup_interrupt,
@@ -42,28 +42,75 @@ from .ws_ap3710i import (
     setting_up_ips,
     start_ssh,
     write_to_serial,
+    event_keep_serial_active,
+    event_ssh_ready,
 )
 
-#  See .ws_ap3710i file for implementation details
+SUPPORTED_MODELS = [
+    "AP3710",
+    "AP3715",
+    "AP3825",
+    "AP3935",
+]
 
 
-def bootup_set_boot_openwrt(ser: serial.Serial):
-    if not ws_ap3710i.event_keep_serial_active.is_set():
-        return
+def get_model_name_from_printenv(printenv: str):
+    model_regex = re.search(r"MODEL=(.*)\r\n", printenv)
+    if model_regex is None:
+        raise RuntimeWarning("no MODEL name found in printenv")
+    full_model_name = model_regex.group(1)
+
+    logging.info("full model name is: %s", full_model_name)
+    model = None
+
+    for model_to_check in SUPPORTED_MODELS:
+        # check if name of model is substring of the model name with suffix
+        if model_to_check in full_model_name:
+            # AP3935i exists with postfixes: -FCC, -IL und -ROW
+            # see https://github.com/grische/extremeflash/pull/56/files#r2118170572
+            model = model_to_check
+            break
+
+    if model is None:
+        raise RuntimeWarning(f"Unexpected Model {full_model_name} found. Aborting to not harm device.")
+
+    logging.debug("model found: %s", model)
+    return model
+
+
+def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
     ser.write(b"printenv\n")
     time.sleep(1)
     printenv_return = ser.read(ser.in_waiting).decode("ascii")
     debug_serial(printenv_return)
+    model = get_model_name_from_printenv(printenv_return)
 
-    if "MODEL=AP3935i" not in printenv_return:
-        model = re.search(r"MODEL=(.*)\r\n", printenv_return)
-        raise RuntimeWarning(
-            f"Unexpected Model {None if model is None else model.group(1)} found. Aborting to not harm device."
+    if model == "AP3825":
+        # From https://forum.darmstadt.freifunk.net/t/flashing-of-the-extreme-networks-ws-ap3825i/923
+        boot_openwrt_params = (
+            b"cp.b 0xEC000000 0x2000000 0x2000000;"
+            b"interrupts off;"
+            b"bootm start 0x2000000;"
+            b"bootm loados;"
+            b"fdt resize;"
+            b"fdt boardsetup;"
+            b"fdt resize;"
+            b"fdt boardsetup;"
+            b"fdt chosen;"
+            b"fdt resize;"
+            b"fdt chosen;"
+            b"bootm prep;"
+            b"bootm go;"
         )
-
-    # https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=3aef61060e3f51aa43fe494d5ff173e81dd43003
-    # following parameters works. Not found in the above commit.
-    boot_openwrt_params = b"sf probe 0; sf read 0x41500000 0x003c0000 0x00e10000; bootm 0x41500000"
+    elif model == "AP3715":
+        boot_openwrt_params = b"sf probe 0;" b"sf read 0x2000000 0x140000 0x1000000;" b"bootm 0x2000000;"
+    elif model == "AP3710":
+        boot_openwrt_params = b"setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000"
+    elif model == "AP3935":
+        # https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=3aef61060e3f51aa43fe494d5ff173e81dd43003
+        boot_openwrt_params = b"sf probe 0; sf read 0x41500000 0x003c0000 0x00e10000; bootm 0x41500000"
+    else:
+        boot_openwrt_params = b""
 
     if "boot_openwrt" in printenv_return:
         logging.debug("Found existing U-Boot boot_openwrt parameter. Verifying.")
@@ -78,7 +125,7 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
             # do not set anything if we found boot_openwrt
             # TODO: should we check if bootcmd is also set correctly?
             logging.debug("Existing U-Boot boot_openwrt parameter looks good.")
-            return
+            return model
     else:
         logging.info("Did not find boot_openwrt in U-Boot parameters. Setting it.")
 
@@ -88,17 +135,29 @@ def bootup_set_boot_openwrt(ser: serial.Serial):
     write_to_serial(ser, b'setenv bootcmd "run boot_openwrt"\n')
     time.sleep(0.5)
 
-    if ws_ap3710i.DRYRUN:
+    if dryrun:
         logging.info("dryrun: Skipping saveenv")
-        return
+        return model
 
     ser.write(b"saveenv\n")
-    time.sleep(2)
+    if model == "AP3715":
+        time.sleep(6)  # AP3715i has a considerably longer savetime in comparison to others
+    else:
+        time.sleep(2)
+
     saveenv_return = ser.read(ser.in_waiting).decode("ascii")
     debug_serial(saveenv_return)
 
-    if "Writing to NAND" not in saveenv_return and "Writing to redundant NAND" not in saveenv_return:
+    save_env_success = False
+
+    for msg in ["Writing to Flash", "Writing to NAND", "Writing to redundant NAND"]:
+        if msg in saveenv_return:
+            save_env_success = True
+            break
+    if not save_env_success:
         raise RuntimeError("saveenv did not successfully write to flash")
+
+    return model
 
 
 def boot_via_tftp(
@@ -106,6 +165,7 @@ def boot_via_tftp(
     tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
     tftp_file: str,
     new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+    model: str,
 ):
     new_ap_ip_str = str(new_ap_ip.ip).encode("ascii")
     new_ap_netmask_str = str(new_ap_ip.netmask).encode("ascii")
@@ -115,24 +175,49 @@ def boot_via_tftp(
     write_to_serial(ser, b"setenv netmask " + new_ap_netmask_str + b"\n")
     write_to_serial(ser, b"setenv serverip " + tftp_ip_str + b"\n")
     write_to_serial(ser, b"setenv gatewayip " + tftp_ip_str + b"\n")
-    write_to_serial(ser, b"tftpboot 0x42000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
+    logging.info("Did setup TFTP Boot.")
+    if model == "AP3710":
+        write_to_serial(ser, b"tftpboot 0x1000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
+    elif model == "AP3935":
+        write_to_serial(ser, b"tftpboot 0x42000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
+    elif model == "AP3825":
+        write_to_serial(ser, b"tftpboot 0x2000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
+    else:
+        raise RuntimeError(f"Unknown model {model}")
     # wait until TFTP transfer is complete
-    while ws_ap3710i.event_keep_serial_active.is_set():
+    while event_keep_serial_active.is_set():
         line = readline_from_serial(ser)
 
         if "Bytes transferred" in line:
             time.sleep(1)
             break
+    if model == "AP3825":
+        # Note: We must step through the `bootm` process manually to avoid fdt relocation.
+        # https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=7e614820a89208c4e91a3a5f9de07a5402accdaa
+        write_to_serial(ser, b"interrupts off\n")
+        write_to_serial(ser, b"bootm start 0x2000000\n", sleep=0.2)
+        write_to_serial(ser, b"bootm loados\n", sleep=2)
+        write_to_serial(ser, b"fdt resize\n", sleep=0.1)
+        write_to_serial(ser, b"fdt boardsetup\n", sleep=0.1)
+        write_to_serial(ser, b"fdt chosen\n", sleep=0.1)
+        write_to_serial(ser, b"bootm prep\n", sleep=0.1)
+        write_to_serial(ser, b"bootm go\n", sleep=0.1)
+    elif model == "AP3935":
+        # Note: We must step through the `bootm` process manually to avoid fdt relocation.
+        # https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=3aef61060e3f51aa43fe494d5ff173e81dd43003
+        write_to_serial(ser, b"bootm start 0x42000000\n", sleep=0.2)
+        write_to_serial(ser, b"bootm loados\n", sleep=2)
+        write_to_serial(ser, b"bootm prep\n", sleep=0.1)
+        write_to_serial(ser, b"bootm go\n", sleep=0.1)
+    elif model in ["AP3715", "AP3710"]:
+        # See https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=765f66810a3324cc35fa6471ee8eeee335ba8c2b
+        write_to_serial(ser, b"bootm\n", sleep=0.1)
 
-    # https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=3aef61060e3f51aa43fe494d5ff173e81dd43003
-    write_to_serial(ser, b"bootm start 0x42000000\n", sleep=0.2)
-    write_to_serial(ser, b"bootm loados\n", sleep=2)
-    write_to_serial(ser, b"bootm prep\n", sleep=0.1)
-    print("Starting TFTP Boot.")
-    write_to_serial(ser, b"bootm go\n", sleep=0.1)
+    logging.info("Starting TFTP Boot.")
+
     max_retries = 2
     cur_retries = 0
-    while ws_ap3710i.event_keep_serial_active.is_set():
+    while event_keep_serial_active.is_set():
         line = readline_from_serial(ser)
 
         if "Retry count exceeded" in line:  # TFTP boot failed
@@ -157,6 +242,7 @@ def boot_via_tftp(
             os._exit(1)
 
         elif is_kernel_booting(line):
+            logging.info("Booting Linux kernel in RAM")
             break
 
         time.sleep(0.01)
@@ -167,19 +253,20 @@ def start_tftp_boot_via_serial(
     tftp_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
     tftp_file: str,
     new_ap_ip: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
+    dryrun: bool = False,
 ):
     with serial.Serial(port=name, baudrate=115200, timeout=30) as ser:
         logging.info(f"Starting to connect to serial port {ser.name}")
-        ws_ap3710i.event_keep_serial_active.set()
+        event_keep_serial_active.set()
 
         bootup_interrupt(ser)
         bootup_login(ser)
         bootup_login_verification(ser)
-        bootup_set_boot_openwrt(ser)
-        boot_via_tftp(ser, tftp_ip, tftp_file, new_ap_ip)
+        model = bootup_set_boot_openwrt(ser, dryrun)
+        boot_via_tftp(ser, tftp_ip, tftp_file, new_ap_ip, model)
         boot_wait_for_brlan(ser)
         boot_set_ips(ser, new_ap_ip)
-        ws_ap3710i.event_ssh_ready.set()
+        event_ssh_ready.set()
         keep_logging_until_reboot(ser)
 
 
@@ -191,8 +278,6 @@ def main(
     ap_ip: Optional[str] = None,
     dryrun: bool = False,
 ):
-    # TODO: improve DRYRUN
-    ws_ap3710i.DRYRUN = dryrun
 
     ap_ip_interface, local_ip_interface = setting_up_ips(local_ip, ap_ip)
 
@@ -206,10 +291,10 @@ def main(
     try:
         serial_thread = Thread(
             target=start_tftp_boot_via_serial,
-            args=[serial_port, local_ip_interface, initramfs_path.name, ap_ip_interface],
+            args=[serial_port, local_ip_interface, initramfs_path.name, ap_ip_interface, dryrun],
             daemon=True,
         )
-        ssh_thread = Thread(target=start_ssh, args=[sysupgrade_path, str(ap_ip_interface.ip)])
+        ssh_thread = Thread(target=start_ssh, args=[sysupgrade_path, str(ap_ip_interface.ip), dryrun])
         logging.debug("Starting serial thread")
         serial_thread.start()
         logging.debug("Starting ssh thread")
