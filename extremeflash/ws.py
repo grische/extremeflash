@@ -47,9 +47,12 @@ from .helpers import (
 )
 
 SUPPORTED_MODELS = [
+    "AP3705",
     "AP3710",
     "AP3715",
+    "AP3805",
     "AP3825",
+    "AP3915",
     "AP3935",
 ]
 
@@ -102,10 +105,19 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
             b"bootm prep;"
             b"bootm go;"
         )
+    elif model == "AP3705":
+        # https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=ebddc5f984a240980303aed68524eb615484eef8
+        boot_openwrt_params = b"setenv boot_openwrt 'setenv bootargs; bootm 0xbf230000'"
+    elif model == "AP3805":
+        boot_openwrt_params = b"setenv boot_openwrt 'setenv bootargs; bootm 0xa1280000'"
     elif model == "AP3715":
         boot_openwrt_params = b"sf probe 0;" b"sf read 0x2000000 0x140000 0x1000000;" b"bootm 0x2000000;"
     elif model == "AP3710":
         boot_openwrt_params = b"setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000"
+    elif model == "AP3915":
+        # https://github.com/openwrt/openwrt/commit/e16a0e7e8876df0a92ec4779fe766de1a943307a
+        boot_openwrt_params = b"setenv boot_openwrt 'sf probe; sf read 0x88000000 0x280000 0xc00000; bootm 0x88000000'"
+        # boot_openwrt_params = b"setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000"
     elif model == "AP3935":
         # https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=3aef61060e3f51aa43fe494d5ff173e81dd43003
         boot_openwrt_params = b"sf probe 0; sf read 0x41500000 0x003c0000 0x00e10000; bootm 0x41500000"
@@ -178,6 +190,12 @@ def boot_via_tftp(
     logging.info("Did setup TFTP Boot.")
     if model == "AP3710":
         write_to_serial(ser, b"tftpboot 0x1000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
+    elif model == "AP3705":
+        write_to_serial(ser, b"tftpboot 0x85000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
+    elif model == "AP3805":
+        write_to_serial(ser, b"tftpboot 0x89000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
+    elif model == "AP3915":
+        write_to_serial(ser, b"tftpboot 0x86000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
     elif model == "AP3935":
         write_to_serial(ser, b"tftpboot 0x42000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
     elif model == "AP3825":
