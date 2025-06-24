@@ -16,17 +16,15 @@
 #
 # SPDX-License-Identifier: GPL-3.0-only
 """This tool allows flashing Enterasys WS-AP3825i access points fully automatically, using OpenWRT's initramfs image."""
+
 import ipaddress
 import logging
 import pathlib
 import re
 import time
 from threading import Thread
-from typing import Optional
 
 import serial
-
-from .tftp_server import TftpServer
 
 from .helpers import (
     boot_set_ips,
@@ -35,6 +33,8 @@ from .helpers import (
     bootup_login,
     bootup_login_verification,
     debug_serial,
+    event_keep_serial_active,
+    event_ssh_ready,
     is_kernel_booting,
     keep_logging_until_reboot,
     post_cleanup,
@@ -42,9 +42,8 @@ from .helpers import (
     setting_up_ips,
     start_ssh,
     write_to_serial,
-    event_keep_serial_active,
-    event_ssh_ready,
 )
+from .tftp_server import TftpServer
 
 SUPPORTED_MODELS = [
     "AP3710",
@@ -103,7 +102,7 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
             b"bootm go;"
         )
     elif model == "AP3715":
-        boot_openwrt_params = b"sf probe 0;" b"sf read 0x2000000 0x140000 0x1000000;" b"bootm 0x2000000;"
+        boot_openwrt_params = b"sf probe 0;sf read 0x2000000 0x140000 0x1000000;bootm 0x2000000;"
     elif model == "AP3710":
         boot_openwrt_params = b"setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000"
     elif model == "AP3935":
@@ -275,10 +274,9 @@ def main(
     initramfs_path_str: str,
     sysupgrade_path_str: str,
     local_ip: str,
-    ap_ip: Optional[str] = None,
+    ap_ip: str | None = None,
     dryrun: bool = False,
 ):
-
     ap_ip_interface, local_ip_interface = setting_up_ips(local_ip, ap_ip)
 
     initramfs_path = pathlib.Path(initramfs_path_str)

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """ExtremeFlash main module"""
+
 import argparse
 import ipaddress
 import logging
 
 import serial
 
-from .ws import main, SUPPORTED_MODELS
+from .ws import SUPPORTED_MODELS, main
 
 
 def test_serial_port(potential_serial_port):

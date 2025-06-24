@@ -1,52 +1,64 @@
-[tool.poetry]
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
 name = "extremeflash"
-version = "0.1.0"
+dynamic = ["version"]
+
 description = ""
-authors = ["Grische <2787581+grische@users.noreply.github.com>"]
-license = "GPL-3.0-only"
 readme = "README.md"
-packages = [{include = "extremeflash"}]
+license = "GPL-3.0-only"
+authors = [
+  {name = "Grische", email = "github@grische.xyz"},
+  {name = "Florian Maurer", email = "fmaurer@disroot.org"}
+]
+requires-python = ">=3.10"
+dependencies = [
+  "pyserial>=3.5",
+  "tftpy>=0.8.2",
+  "paramiko>=3.0.0",
+  "scp>=0.14.5,<0.16.0"
+]
 
-[tool.poetry.dependencies]
-python = "^3.10"
-pyserial = "^3.5"
-tftpy = "^0.8.2"
-paramiko = "^3.0.0"
-scp = ">=0.14.5,<0.16.0"
 
-[tool.poetry.scripts]
+[project.scripts]
 extremeflash = "extremeflash.__main__:run"
 
-[tool.poetry.group.dev.dependencies]
-flake8 = ">=6.1,<8.0"
-mypy = "^1.16.1"
-pylint = "^3.0.2"
-types-paramiko = "^3.0.0.4"
-black = ">=23.11,<26.0"
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.16.1",
+  "types-paramiko>=3.0.0.4",
+  "ruff>=0.12.0"
+]
 
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[tool.setuptools]
+packages = ["extremeflash"]
 
-[tool.pylint.'MAIN']
+[tool.setuptools_scm]
+local_scheme = "no-local-version"
+
+[tool.pylint.MAIN]
 max-line-length = 120
 disable = [
-    "logging-fstring-interpolation",
-    "missing-function-docstring",
+  "logging-fstring-interpolation",
+  "missing-function-docstring"
 ]
 fail-under = 9.5
-fail-on = [
-    "E", # any error
-]
+fail-on = ["E"]
 recursive = true
 
-[[tool.mypy.overrides]]
-module = [
-    "serial.*",
-    "scp.*",
-    "tftpy.*",
-]
+[tool.mypy]
 ignore_missing_imports = true
 
-[tool.black]
+[[tool.mypy.overrides]]
+module = ["serial.*", "scp.*", "tftpy.*"]
+ignore_missing_imports = true
+
+[tool.ruff]
 line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "G", "PIE"]
+ignore = ["E501", "G004", "E731"]
+
