@@ -19,6 +19,7 @@
 
 import ipaddress
 import logging
+import os
 import pathlib
 import re
 import time
@@ -235,9 +236,7 @@ def boot_via_tftp(
         elif "ERROR: can't get kernel image!" in line:
             # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/bootm.c#L123
             logging.error("Unable to boot initramfs file. Check you provided the correct file. Aborting.")
-            import os
 
-            # pylint: disable=protected-access
             os._exit(1)
 
         elif is_kernel_booting(line):

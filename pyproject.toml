@@ -58,7 +58,10 @@ ignore_missing_imports = true
 [tool.ruff]
 line-length = 120
 
+[tool.ruff.lint.mccabe]
+max-complexity = 15   # Recommended: 10
+
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "G", "PIE"]
-ignore = ["E501", "G004", "E731"]
+select = ["E", "F", "I", "UP", "G", "PL", "FURB", "LOG", "C90", "EXE"]
+ignore = ["G004", "LOG015", "PLR"]
 
