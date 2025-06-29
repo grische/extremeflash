@@ -23,6 +23,7 @@ mypy = "^1.16.1"
 pylint = "^3.0.2"
 types-paramiko = "^3.0.0.4"
 black = ">=23.11,<26.0"
+ruff = "^0.12.3"
 
 [build-system]
 requires = ["poetry-core"]
@@ -50,3 +51,13 @@ ignore_missing_imports = true
 
 [tool.black]
 line-length = 120
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15   # Recommended: 10
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "G", "PL", "FURB", "LOG", "C90", "EXE"]
+ignore = ["G004", "LOG015", "PLR"]
