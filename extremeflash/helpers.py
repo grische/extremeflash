@@ -15,15 +15,15 @@
 #
 # SPDX-License-Identifier: GPL-3.0-only
 """This tool allows flashing Enterasys WS-AP3710i access points fully automatically, using OpenWRT's initramfs image."""
+
 import ipaddress
 import logging
 import time
 from threading import Event
-from typing import Optional
 
 import paramiko
-import serial
 import scp
+import serial
 
 DRYRUN = False
 #
@@ -267,7 +267,7 @@ def post_cleanup(tftp_server, ssh_thread, serial_thread):
         tftp_server.stop()  # set now=True to force shutdown
 
 
-def setting_up_ips(local_ip: str, ap_ip_str: Optional[str] = None):
+def setting_up_ips(local_ip: str, ap_ip_str: str | None = None):
     # IP management
     local_ip_interface = ipaddress.ip_interface(local_ip)
     local_ip_interface = ip_address_fix_prefix(local_ip_interface)
