@@ -19,7 +19,7 @@ import ipaddress
 import logging
 import time
 from threading import Event
-from typing import Optional
+from typing import Optional, Union
 
 import paramiko
 import serial
@@ -290,8 +290,8 @@ def setting_up_ips(local_ip: str, ap_ip_str: Optional[str] = None):
 
 
 def ip_address_fix_prefix(
-    ip_interface: ipaddress.IPv4Interface | ipaddress.IPv6Interface,
-) -> ipaddress.IPv4Interface | ipaddress.IPv6Interface:
+    ip_interface: Union[ipaddress.IPv4Interface, ipaddress.IPv6Interface],
+) -> Union[ipaddress.IPv4Interface, ipaddress.IPv6Interface]:
     if ip_interface.network.prefixlen == ip_interface.network.max_prefixlen:  # probably forgot to specify network
         if isinstance(ip_interface, ipaddress.IPv4Interface):
             new_prefix = 24
