@@ -15,6 +15,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-only
 """This tool allows flashing Enterasys WS-AP3710i access points fully automatically, using OpenWRT's initramfs image."""
+
 import ipaddress
 import logging
 import time
@@ -22,8 +23,8 @@ from threading import Event
 from typing import Optional, Union
 
 import paramiko
-import serial
 import scp
+import serial
 
 DRYRUN = False
 #

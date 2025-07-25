@@ -16,8 +16,10 @@
 #
 # SPDX-License-Identifier: GPL-3.0-only
 """This tool allows flashing Enterasys WS-AP3825i access points fully automatically, using OpenWRT's initramfs image."""
+
 import ipaddress
 import logging
+import os
 import pathlib
 import re
 import time
@@ -26,8 +28,6 @@ from typing import Optional, Union
 
 import serial
 
-from .tftp_server import TftpServer
-
 from .helpers import (
     boot_set_ips,
     boot_wait_for_brlan,
@@ -35,6 +35,8 @@ from .helpers import (
     bootup_login,
     bootup_login_verification,
     debug_serial,
+    event_keep_serial_active,
+    event_ssh_ready,
     is_kernel_booting,
     keep_logging_until_reboot,
     post_cleanup,
@@ -42,9 +44,8 @@ from .helpers import (
     setting_up_ips,
     start_ssh,
     write_to_serial,
-    event_keep_serial_active,
-    event_ssh_ready,
 )
+from .tftp_server import TftpServer
 
 SUPPORTED_MODELS = [
     "AP3710",
@@ -103,7 +104,7 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
             b"bootm go;"
         )
     elif model == "AP3715":
-        boot_openwrt_params = b"sf probe 0;" b"sf read 0x2000000 0x140000 0x1000000;" b"bootm 0x2000000;"
+        boot_openwrt_params = b"sf probe 0;sf read 0x2000000 0x140000 0x1000000;bootm 0x2000000;"
     elif model == "AP3710":
         boot_openwrt_params = b"setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000"
     elif model == "AP3935":
@@ -236,7 +237,6 @@ def boot_via_tftp(
         elif "ERROR: can't get kernel image!" in line:
             # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/bootm.c#L123
             logging.error("Unable to boot initramfs file. Check you provided the correct file. Aborting.")
-            import os
 
             # pylint: disable=protected-access
             os._exit(1)
@@ -278,7 +278,6 @@ def main(
     ap_ip: Optional[str] = None,
     dryrun: bool = False,
 ):
-
     ap_ip_interface, local_ip_interface = setting_up_ips(local_ip, ap_ip)
 
     initramfs_path = pathlib.Path(initramfs_path_str)
