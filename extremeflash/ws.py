@@ -48,9 +48,12 @@ from .helpers import (
 from .tftp_server import TftpServer
 
 SUPPORTED_MODELS = [
+    "AP3705",
     "AP3710",
     "AP3715",
+    "AP3805",
     "AP3825",
+    "AP3915",
     "AP3935",
 ]
 
@@ -79,13 +82,7 @@ def get_model_name_from_printenv(printenv: str):
     return model
 
 
-def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
-    ser.write(b"printenv\n")
-    time.sleep(1)
-    printenv_return = ser.read(ser.in_waiting).decode("ascii")
-    debug_serial(printenv_return)
-    model = get_model_name_from_printenv(printenv_return)
-
+def determine_openwrt_params(model):
     if model == "AP3825":
         # From https://forum.darmstadt.freifunk.net/t/flashing-of-the-extreme-networks-ws-ap3825i/923
         boot_openwrt_params = (
@@ -103,15 +100,34 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
             b"bootm prep;"
             b"bootm go;"
         )
+    elif model == "AP3705":
+        # https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=ebddc5f984a240980303aed68524eb615484eef8
+        boot_openwrt_params = b"setenv boot_openwrt 'setenv bootargs; bootm 0xbf230000'"
+    elif model == "AP3805":
+        boot_openwrt_params = b"setenv boot_openwrt 'setenv bootargs; bootm 0xa1280000'"
     elif model == "AP3715":
         boot_openwrt_params = b"sf probe 0;sf read 0x2000000 0x140000 0x1000000;bootm 0x2000000;"
     elif model == "AP3710":
         boot_openwrt_params = b"setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000"
+    elif model == "AP3915":
+        # https://github.com/openwrt/openwrt/commit/e16a0e7e8876df0a92ec4779fe766de1a943307a
+        boot_openwrt_params = b"setenv boot_openwrt 'sf probe; sf read 0x88000000 0x280000 0xc00000; bootm 0x88000000'"
+        # boot_openwrt_params = b"setenv bootargs; cp.b 0xee000000 0x1000000 0x1000000; bootm 0x1000000"
     elif model == "AP3935":
         # https://git.openwrt.org/?p=openwrt/openwrt.git;a=commit;h=3aef61060e3f51aa43fe494d5ff173e81dd43003
         boot_openwrt_params = b"sf probe 0; sf read 0x41500000 0x003c0000 0x00e10000; bootm 0x41500000"
     else:
         boot_openwrt_params = b""
+    return boot_openwrt_params
+
+
+def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
+    ser.write(b"printenv\n")
+    time.sleep(1)
+    printenv_return = ser.read(ser.in_waiting).decode("ascii")
+    debug_serial(printenv_return)
+    model = get_model_name_from_printenv(printenv_return)
+    boot_openwrt_params = determine_openwrt_params(model)
 
     if "boot_openwrt" in printenv_return:
         logging.debug("Found existing U-Boot boot_openwrt parameter. Verifying.")
@@ -179,6 +195,12 @@ def boot_via_tftp(
     logging.info("Did setup TFTP Boot.")
     if model == "AP3710":
         write_to_serial(ser, b"tftpboot 0x1000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
+    elif model == "AP3705":
+        write_to_serial(ser, b"tftpboot 0x85000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
+    elif model == "AP3805":
+        write_to_serial(ser, b"tftpboot 0x89000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
+    elif model == "AP3915":
+        write_to_serial(ser, b"tftpboot 0x86000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
     elif model == "AP3935":
         write_to_serial(ser, b"tftpboot 0x42000000 " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n")
     elif model == "AP3825":
@@ -215,7 +237,10 @@ def boot_via_tftp(
         write_to_serial(ser, b"bootm\n", sleep=0.1)
 
     logging.info("Starting TFTP Boot.")
+    wait_for_ramboot(ser)
 
+
+def wait_for_ramboot(ser: serial.Serial):
     max_retries = 2
     cur_retries = 0
     while event_keep_serial_active.is_set():
