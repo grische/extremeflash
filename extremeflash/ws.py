@@ -79,13 +79,7 @@ def get_model_name_from_printenv(printenv: str):
     return model
 
 
-def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
-    ser.write(b"printenv\n")
-    time.sleep(1)
-    printenv_return = ser.read(ser.in_waiting).decode("ascii")
-    debug_serial(printenv_return)
-    model = get_model_name_from_printenv(printenv_return)
-
+def determine_openwrt_boot_params(model):
     if model == "AP3825":
         # From https://forum.darmstadt.freifunk.net/t/flashing-of-the-extreme-networks-ws-ap3825i/923
         boot_openwrt_params = (
@@ -112,6 +106,16 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
         boot_openwrt_params = b"sf probe 0; sf read 0x41500000 0x003c0000 0x00e10000; bootm 0x41500000"
     else:
         boot_openwrt_params = b""
+    return boot_openwrt_params
+
+
+def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
+    ser.write(b"printenv\n")
+    time.sleep(1)
+    printenv_return = ser.read(ser.in_waiting).decode("ascii")
+    debug_serial(printenv_return)
+    model = get_model_name_from_printenv(printenv_return)
+    boot_openwrt_params = determine_openwrt_boot_params(model)
 
     if "boot_openwrt" in printenv_return:
         logging.debug("Found existing U-Boot boot_openwrt parameter. Verifying.")
@@ -216,6 +220,8 @@ def boot_via_tftp(
 
     logging.info("Starting TFTP Boot.")
 
+
+def wait_for_ramboot(ser: serial.Serial):
     max_retries = 2
     cur_retries = 0
     while event_keep_serial_active.is_set():
@@ -264,6 +270,7 @@ def start_tftp_boot_via_serial(
         bootup_login_verification(ser)
         model = bootup_set_boot_openwrt(ser, dryrun)
         boot_via_tftp(ser, tftp_ip, tftp_file, new_ap_ip, model)
+        wait_for_ramboot(ser)
         boot_wait_for_brlan(ser)
         boot_set_ips(ser, new_ap_ip)
         event_ssh_ready.set()
