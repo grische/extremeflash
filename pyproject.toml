@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "extremeflash"
-version = "0.1.0"
+version = "0.6.0"
 description = ""
 authors = ["Grische <2787581+grische@users.noreply.github.com>"]
 license = "GPL-3.0-only"
