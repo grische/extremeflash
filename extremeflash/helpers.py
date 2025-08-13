@@ -88,6 +88,14 @@ def bootup_interrupt(ser: serial.Serial):
             ser.write(text)
             break
 
+        if "Hit the 's' key to stop autoboot" in bootlog_buffer:
+            text = b"s"  # send interrupt key
+            debug_serial(bootlog_buffer)  # print remaining debug buffer
+            logging.info(f"Sending interrupt key {text.decode()} to enter Boot prompt.")
+            time.sleep(0.5)  # sleep 500ms
+            ser.write(text)
+            break
+
 
 def bootup_login(ser: serial.Serial):
     while event_keep_serial_active.is_set():
