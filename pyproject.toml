@@ -11,7 +11,7 @@ packages = [{include = "extremeflash"}]
 python = "^3.9.2"
 pyserial = "^3.5"
 tftpy = "^0.8.2"
-paramiko = "^3.0.0"
+paramiko = "^4.0.0"
 scp = ">=0.14.5,<0.16.0"
 
 [tool.poetry.scripts]
