@@ -7,6 +7,12 @@ license = "GPL-3.0-only"
 readme = "README.md"
 packages = [{include = "extremeflash"}]
 
+[tool.poetry.urls]
+Homepage = "https://github.com/grische/extremeflash"
+Source = "https://github.com/grische/extremeflash.git"
+"Release Notes" = "https://github.com/grische/extremeflash/releases"
+Issues = "https://github.com/grische/extremeflash/issues"
+
 [tool.poetry.dependencies]
 python = "^3.9.2"
 pyserial = "^3.5"
