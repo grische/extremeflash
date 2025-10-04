@@ -6,13 +6,12 @@ authors = ["Grische <2787581+grische@users.noreply.github.com>"]
 license = "GPL-3.0-only"
 readme = "README.md"
 packages = [{include = "extremeflash"}]
-homepage = "https://github.com/grische/extremeflash"
 
 [tool.poetry.urls]
+Homepage = "https://github.com/grische/extremeflash"
 Documentation = "https://github.com/grische/extremeflash#readme"
-Repository = "https://github.com/grische/extremeflash.git"
 Releases = "https://github.com/grische/extremeflash/releases"
-Issues = "https://github.com/grische/extremeflash/issues"
+Downloads = "https://github.com/grische/extremeflash/tags"
 
 [tool.poetry.dependencies]
 python = "^3.9.2"
