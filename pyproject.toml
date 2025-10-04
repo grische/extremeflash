@@ -6,6 +6,12 @@ authors = ["Grische <2787581+grische@users.noreply.github.com>"]
 license = "GPL-3.0-only"
 readme = "README.md"
 packages = [{include = "extremeflash"}]
+homepage = "https://pypi.org/project/extremeflash"
+
+[tool.poetry.urls]
+"Project Description" = "https://pypi.org/project/extremeflash/#description"
+"Release History" = "https://pypi.org/project/extremeflash/#history"
+"Download Files" = "https://pypi.org/project/extremeflash/#files"
 
 [tool.poetry.dependencies]
 python = "^3.9.2"
