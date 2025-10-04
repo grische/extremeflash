@@ -6,7 +6,7 @@ authors = ["Grische <2787581+grische@users.noreply.github.com>"]
 license = "GPL-3.0-only"
 readme = "README.md"
 packages = [{include = "extremeflash"}]
-homepage = "https://pypi.org/project/extremeflash"
+homepage = "https://github.com/grische/extremeflash"
 
 [tool.poetry.urls]
 Documentation = "https://github.com/grische/extremeflash#readme"
