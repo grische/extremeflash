@@ -9,9 +9,10 @@ packages = [{include = "extremeflash"}]
 homepage = "https://pypi.org/project/extremeflash"
 
 [tool.poetry.urls]
-"Project Description" = "https://pypi.org/project/extremeflash/#description"
-"Release History" = "https://pypi.org/project/extremeflash/#history"
-"Download Files" = "https://pypi.org/project/extremeflash/#files"
+Documentation = "https://github.com/grische/extremeflash#readme"
+Repository = "https://github.com/grische/extremeflash.git"
+Releases = "https://github.com/grische/extremeflash/releases"
+Issues = "https://github.com/grische/extremeflash/issues"
 
 [tool.poetry.dependencies]
 python = "^3.9.2"
