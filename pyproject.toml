@@ -1,27 +1,32 @@
-[tool.poetry]
+[project]
 name = "extremeflash"
-version = "0.1.0"
-description = ""
-authors = ["Grische <2787581+grische@users.noreply.github.com>"]
+description = "Automated flashing tool for Extreme Networks / Enterasys access points."
 license = "GPL-3.0-only"
+dynamic = ["version"]
 readme = "README.md"
-packages = [{include = "extremeflash"}]
+authors = [
+    { name = "Grische", email = "2787581+grische@users.noreply.github.com" },
+]
+requires-python = '>=3.9.2,<4'
+dependencies = [
+    'pyserial>=3.5,<4.0',
+    'tftpy>=0.8.2,<0.9.0',
+    'paramiko>3,<4',
+    'scp>=0.14.5,<0.16.0',
+]
 
-[tool.poetry.urls]
+[project.scripts]
+extremeflash = "extremeflash.__main__:run"
+
+[project.urls]
 Homepage = "https://github.com/grische/extremeflash"
 Source = "https://github.com/grische/extremeflash.git"
 "Release Notes" = "https://github.com/grische/extremeflash/releases"
 Issues = "https://github.com/grische/extremeflash/issues"
 
-[tool.poetry.dependencies]
-python = "^3.9.2"
-pyserial = "^3.5"
-tftpy = "^0.8.2"
-paramiko = ">3,<4"
-scp = ">=0.14.5,<0.16.0"
-
-[tool.poetry.scripts]
-extremeflash = "extremeflash.__main__:run"
+[tool.poetry]
+version = "0.1.0"
+packages = [{ include = "extremeflash" }]
 
 [tool.poetry.group.dev.dependencies]
 flake8 = ">=6.1,<8.0"
@@ -32,7 +37,7 @@ black = ">=23.11,<26.0"
 ruff = "^0.13.2"
 
 [build-system]
-requires = ["poetry-core"]
+requires = ['poetry-core>=2.0']
 build-backend = "poetry.core.masonry.api"
 
 [tool.pylint.'MAIN']
