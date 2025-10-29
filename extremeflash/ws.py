@@ -112,7 +112,7 @@ def determine_openwrt_boot_params(model):
 def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> str:
     ser.write(b"printenv\n")
     time.sleep(1)
-    printenv_return = ser.read(ser.in_waiting).decode("ascii")
+    printenv_return = ser.read_all().decode("ascii")
     debug_serial(printenv_return)
     model = get_model_name_from_printenv(printenv_return)
     boot_openwrt_params = determine_openwrt_boot_params(model)
