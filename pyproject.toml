@@ -34,7 +34,7 @@ mypy = "^1.19.1"
 pylint = "^3.3.9"
 types-paramiko = ">3,<4"
 black = ">=23.11,<26.0"
-ruff = "^0.13.2"
+ruff = "^0.14.11"
 
 [build-system]
 requires = ['poetry-core>=2.0']
