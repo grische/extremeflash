@@ -21,7 +21,20 @@ class TftpServer:
         self.listenip = listenip
         self.port = port
         self.tftp_server = tftpy.TftpServer(self.tmpdir.name)
-        self.tftp_thread = Thread(target=self.tftp_server.listen, args=[self.listenip, self.port])
+
+        def start_server(listenip, listenport):
+            try:
+                self.tftp_server.listen(listenip, listenport)
+            except OSError as e:
+                logging.error(
+                    "could not start TFTP-Server on %s:%s. "
+                    "Make sure you have one running serving the required files: %s",
+                    listenip,
+                    listenport,
+                    e,
+                )
+
+        self.tftp_thread = Thread(target=start_server, args=[self.listenip, self.port])
         copyfile(self.filepath, os.path.join(self.tmpdir.name, self.filepath.name))
 
     def start(self) -> tftpy.TftpServer:
