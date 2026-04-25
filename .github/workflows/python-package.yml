@@ -26,19 +26,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install poetry and flake8
+      - name: Install poetry
         run: |
           python -m pip install --upgrade pip
-          python -m pip install flake8 poetry poetry-plugin-export
+          python -m pip install poetry poetry-plugin-export
 
       - name: Install project dependencies
         run: |
           poetry export -f requirements.txt --with dev --output requirements.txt
           pip install -r requirements.txt
-
-      - name: Lint with flake8
-        run: |
-          flake8 . --count --show-source --statistics
 
       - name: Lint with pylint
         run: |
@@ -55,10 +51,6 @@ jobs:
       - name: Check formatting with ruff
         run: |
           ruff format --check .
-
-      - name: Check formatting with black
-        run: |
-          black --check .
 
   test_deploy:
     runs-on: ubuntu-latest
