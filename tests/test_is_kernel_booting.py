@@ -2,7 +2,7 @@
 
 import pytest
 
-from extremeflash.helpers import is_kernel_booting
+from extremeflash.serial_console import is_kernel_booting
 
 
 @pytest.mark.parametrize(

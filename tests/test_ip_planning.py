@@ -4,7 +4,7 @@ import ipaddress
 
 import pytest
 
-from extremeflash.helpers import ip_address_fix_prefix, setting_up_ips
+from extremeflash.ip_planning import ip_address_fix_prefix, setting_up_ips
 
 
 def test_setting_up_ips_ipv4_with_prefix():

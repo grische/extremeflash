@@ -31,16 +31,16 @@ from typing import Optional
 import serial
 
 from .exceptions import FlashError, OperationCancelled
-from .helpers import (
+from .ip_planning import setting_up_ips
+from .serial_console import (
     boot_set_ips,
     boot_wait_for_brlan,
     bootup_interrupt,
     bootup_login,
     bootup_login_verification,
     keep_logging_until_reboot,
-    run_ssh_flash,
-    setting_up_ips,
 )
+from .ssh_flasher import run_ssh_flash
 from .tftp_server import TftpServer
 from .ws import boot_via_tftp, bootup_set_boot_openwrt, wait_for_ramboot
 

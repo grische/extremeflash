@@ -27,12 +27,8 @@ from typing import Union
 import serial
 
 from .exceptions import FlashError
-from .helpers import (
-    is_kernel_booting,
-    write_to_serial,
-)
 from .models import ApModel, get_model_from_printenv
-from .serial_console import read_until, read_until_prompt
+from .serial_console import is_kernel_booting, read_until, read_until_prompt, write_to_serial
 
 
 def bootup_set_boot_openwrt(ser: serial.Serial, cancel: Event, dryrun: bool = False) -> ApModel:
