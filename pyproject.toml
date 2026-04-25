@@ -31,6 +31,7 @@ packages = [{ include = "extremeflash" }]
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.19.1"
 pylint = "^3.3.9"
+pytest = "^8.0"
 types-paramiko = ">3,<4"
 ruff = "^0.15.8"
 

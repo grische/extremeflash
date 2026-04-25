@@ -107,7 +107,7 @@ def run():
 
     logging.basicConfig(level=loglevel)
     logging.getLogger("tftpy").setLevel(max(loglevel, logging.WARNING))  # tftpy is very spammy
-    logging.getLogger("paramiko.transport").setLevel(max(loglevel, logging.INFO))
+    logging.getLogger("paramiko.transport").setLevel(loglevel)
 
     serial_port = args.port
     if not args.port:

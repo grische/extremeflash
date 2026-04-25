@@ -38,19 +38,23 @@ jobs:
 
       - name: Lint with pylint
         run: |
-          pylint .
+          pylint extremeflash
 
       - name: Lint with mypy
         run: |
-          mypy .
+          mypy extremeflash tests
 
       - name: Lint with ruff
         run: |
-          ruff check .
+          ruff check extremeflash tests
 
       - name: Check formatting with ruff
         run: |
-          ruff format --check .
+          ruff format --check extremeflash tests
+
+      - name: Run tests with pytest
+        run: |
+          pytest tests
 
   test_deploy:
     runs-on: ubuntu-latest

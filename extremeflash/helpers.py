@@ -221,7 +221,6 @@ def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = "192.168.1.1", dryrun:
     if event_abort_ssh.is_set():
         return
     logging.info("SSH Starting")
-    paramiko.util.log_to_file("paramiko.log")
     with paramiko.Transport(ap_ip) as transport:
         transport.connect()  # ignoring all security
         transport.auth_none("root")  # password-less login
