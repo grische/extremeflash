@@ -10,8 +10,6 @@ Focus areas:
   - os._exit replacement: wait_for_ramboot raising FlashError propagates cleanly
 """
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from extremeflash import flash_session as fs_module
@@ -40,27 +38,28 @@ def session(monkeypatch):
 def test_cancel_ssh_sets_abort_before_ready(session):
     """Producer order is load-bearing: consumer waits on ssh_ready then checks
     ssh_abort. If `ready.set()` ran first, a context switch could let the
-    consumer wake and miss `abort`."""
+    consumer wake and miss `abort`. Spy wraps the real `Event.set()` so we
+    verify *both* that the underlying Events end up set AND the order."""
     seen = []
+    real_abort_set = session.ssh_abort.set
+    real_ready_set = session.ssh_ready.set
 
-    def record_set(name):
-        original = getattr(session, name)
+    def tracked_abort():
+        seen.append("ssh_abort")
+        real_abort_set()
 
-        def wrapped():
-            seen.append(name)
-            original.set.__wrapped__ = None  # marker for the closure
-            original.set()
+    def tracked_ready():
+        seen.append("ssh_ready")
+        real_ready_set()
 
-        return wrapped
-
-    abort_set = MagicMock(side_effect=lambda: seen.append("ssh_abort"))
-    ready_set = MagicMock(side_effect=lambda: seen.append("ssh_ready"))
-    session.ssh_abort.set = abort_set
-    session.ssh_ready.set = ready_set
+    session.ssh_abort.set = tracked_abort
+    session.ssh_ready.set = tracked_ready
 
     session.cancel_ssh()
 
     assert seen == ["ssh_abort", "ssh_ready"], "ssh_abort must be set before ssh_ready"
+    assert session.ssh_abort.is_set(), "real ssh_abort Event must end up set"
+    assert session.ssh_ready.is_set(), "real ssh_ready Event must end up set"
 
 
 def test_cancel_run_signals_cancel_and_ssh_but_not_tftp_stop(session):
