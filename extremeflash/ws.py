@@ -30,10 +30,10 @@ from .exceptions import FlashError
 from .helpers import (
     debug_serial,
     is_kernel_booting,
-    readline_from_serial,
     write_to_serial,
 )
 from .models import ApModel, get_model_from_printenv
+from .serial_console import read_until
 
 
 def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> ApModel:
@@ -110,13 +110,15 @@ def boot_via_tftp(
         b"tftpboot " + model.tftp_load_address + b" " + tftp_ip_str + b":" + tftp_file.encode("ascii") + b"\n",
     )
 
-    # wait until TFTP transfer is complete
-    while not cancel.is_set():
-        line = readline_from_serial(ser)
-
-        if "Bytes transferred" in line:
-            time.sleep(1)
-            break
+    # wait until TFTP transfer is complete (timeout=120: 2x expected transfer time
+    # for ~6 MB initramfs at conservative throughput)
+    read_until(
+        ser,
+        predicates={"transferred": lambda line: "Bytes transferred" in line},
+        cancel=cancel,
+        timeout=120,
+    )
+    time.sleep(1)
 
     for cmd, sleep in model.bootm_sequence:
         write_to_serial(ser, cmd, sleep=sleep)
@@ -125,32 +127,43 @@ def boot_via_tftp(
 
 
 def wait_for_ramboot(ser: serial.Serial, cancel: Event):
+    """Wait for the kernel to start booting from RAM after the TFTP load.
+
+    Per-attempt timeout: 60 s (one TFTP transfer + bootm). Up to 3 attempts:
+    cur_retries 0, 1, 2 each tolerate a 'Retry count exceeded' before the 4th
+    increment trips the abort. So 60 s × 3 = 180 s worst-case.
+    """
     max_retries = 2
     cur_retries = 0
-    while not cancel.is_set():
-        line = readline_from_serial(ser)
-
-        if "Retry count exceeded" in line:  # TFTP boot failed
+    while True:
+        key, line = read_until(
+            ser,
+            predicates={
+                "retry_exceeded": lambda line: "Retry count exceeded" in line,
+                "wrong_image_format": lambda line: "Wrong Image Format for bootm command" in line,
+                "no_kernel_image": lambda line: "ERROR: can't get kernel image!" in line,
+                "kernel_booting": is_kernel_booting,
+            },
+            cancel=cancel,
+            timeout=60,
+        )
+        if key == "retry_exceeded":
             # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/net/tftp.c#L704
             logging.warning(f"Failed booting from TFTP (attempt #{cur_retries}): {line}")
             cur_retries = cur_retries + 1
             if cur_retries > max_retries:
                 write_to_serial(ser, b"\x03")
                 raise RuntimeError(f"Maximum TFTP retries {max_retries} reached. Aborting")
-
-        elif "Wrong Image Format for bootm command" in line:
+            continue
+        if key == "wrong_image_format":
             # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/bootm.c#L974
-            # do not trigger any other condition, simply retyry when wrong image format was found
             logging.error("TFTP boot found wrong image format")
-
-        elif "ERROR: can't get kernel image!" in line:
+            continue
+        if key == "no_kernel_image":
             # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/bootm.c#L123
             # Raise instead of os._exit so FlashSession's run() finally block runs cleanly:
-            # cleanup tears down the TFTP server, closes the paramiko log, and joins ssh_thread.
+            # cleanup tears down the TFTP server and joins ssh_thread.
             raise FlashError("Unable to boot initramfs file. Check you provided the correct file. Aborting.")
-
-        elif is_kernel_booting(line):
-            logging.info("Booting Linux kernel in RAM")
-            break
-
-        time.sleep(0.01)
+        # key == "kernel_booting"
+        logging.info("Booting Linux kernel in RAM")
+        return

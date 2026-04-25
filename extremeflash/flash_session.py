@@ -133,7 +133,9 @@ class FlashSession:
     def _run_serial(self) -> None:
         # Note: the serial port is opened inside the worker thread so its lifetime
         # matches the thread's. Pre-PR-3 this lived in start_tftp_boot_via_serial.
-        with serial.Serial(port=self.serial_port, baudrate=115200, timeout=30) as ser:
+        # PR 4a lowered timeout from 30 s to 1 s so read_until's cancel-check
+        # between readline() cycles fires within ≤ 1 s on a silent wire.
+        with serial.Serial(port=self.serial_port, baudrate=115200, timeout=1) as ser:
             logging.info(f"Starting to connect to serial port {ser.name}")
 
             bootup_interrupt(ser, self.cancel)

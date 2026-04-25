@@ -27,6 +27,8 @@ import paramiko
 import scp
 import serial
 
+from .serial_console import read_until
+
 if TYPE_CHECKING:
     from .flash_session import FlashSession
 
@@ -83,21 +85,31 @@ def bootup_interrupt(ser: serial.Serial, cancel: Event):
 
 
 def bootup_login(ser: serial.Serial, cancel: Event):
-    while not cancel.is_set():
-        line = readline_from_serial(ser)
-
-        if "[30s timeout]" in line:
+    # Loops until the password-prompt echo confirms login attempt landed. The
+    # current code is unbounded (no deadline) — match that with timeout=None;
+    # the user may have paused before powering the AP. Cancel responsiveness
+    # is bounded by the serial port timeout (1 s after PR 4a's reduction).
+    while True:
+        key, _line = read_until(
+            ser,
+            predicates={
+                "timeout_prompt": lambda line: "[30s timeout]" in line,
+                "password_echo": lambda line: "password: new2day" in line,
+            },
+            cancel=cancel,
+            timeout=None,
+        )
+        if key == "timeout_prompt":
             time.sleep(0.1)
             logging.info("Attempting to log in.")
             ser.write(b"admin\n")
             time.sleep(0.1)
             ser.write(b"new2day\n")
-        elif "password: new2day" in line:
-            time.sleep(0.1)  # sleep 500ms
-            logging.info("Checking if login was successful.")
-            break
-
-        time.sleep(0.01)
+            continue
+        # key == "password_echo"
+        time.sleep(0.1)  # sleep 500ms
+        logging.info("Checking if login was successful.")
+        break
 
 
 def bootup_login_verification(ser: serial.Serial, cancel: Event):
@@ -143,21 +155,27 @@ def is_kernel_booting(line):
 
 
 def boot_wait_for_brlan(ser: serial.Serial, cancel: Event):
-    # The "eth0: Link is Up" comes up, then goes down again and then comes up again
-    # It seems that the second "up" happens after eth0 has entered promiscuous mode
-    # and after the bridge has been created
+    """Wait until the AP's br-lan bridge is ready to receive traffic.
 
-    while not cancel.is_set():
-        line = readline_from_serial(ser)
+    The "eth0: Link is Up" comes up, then goes down again and then comes up again
+    after eth0 has entered promiscuous mode and the bridge has been created.
 
-        if "br-lan: link becomes ready" in line or (  # OpenWRT 22.10 and earlier
-            "br-lan: port" in line and "entered forwarding state" in line  # OpenWRT 24.10 and later
-        ):
-            logging.info("br-lan is ready.")
-            time.sleep(2)  # sometimes br-lan is ready but the default IP is still not reachable
-            break
-
-        time.sleep(0.1)
+    Timeout: 180 s — 2x the observed worst-case kernel-to-br-lan time on the slowest
+    supported model (AP3825).
+    """
+    read_until(
+        ser,
+        predicates={
+            # OpenWRT 22.10 and earlier:
+            "link_ready_22": lambda line: "br-lan: link becomes ready" in line,
+            # OpenWRT 24.10 and later:
+            "fwd_state_24": lambda line: "br-lan: port" in line and "entered forwarding state" in line,
+        },
+        cancel=cancel,
+        timeout=180,
+    )
+    logging.info("br-lan is ready.")
+    time.sleep(2)  # sometimes br-lan is ready but the default IP is still not reachable
 
 
 def boot_set_ips(ser, new_ap_ip):
@@ -172,16 +190,28 @@ def boot_set_ips(ser, new_ap_ip):
 
 
 def keep_logging_until_reboot(ser: serial.Serial, cancel: Event):
-    while not cancel.is_set():
-        if ser.in_waiting > 5:
-            line = readline_from_serial(ser)
-            if "Upgrade completed" in line:
-                logging.info("Flashing successful.")
-            elif "reboot: Restarting system" in line:
-                logging.info("Reboot detected. Stopping serial connection.")
-                break
+    """Watch for sysupgrade completion and the eventual reboot.
 
-        time.sleep(0.05)
+    Timeout: 300 s — covers full sysupgrade + reboot on AP3825 with NAND.
+    `Upgrade completed` is logged on first sighting; the loop terminates only
+    on `reboot: Restarting system`.
+    """
+    while True:
+        key, _line = read_until(
+            ser,
+            predicates={
+                "upgrade_done": lambda line: "Upgrade completed" in line,
+                "rebooting": lambda line: "reboot: Restarting system" in line,
+            },
+            cancel=cancel,
+            timeout=300,
+        )
+        if key == "upgrade_done":
+            logging.info("Flashing successful.")
+            continue
+        # key == "rebooting"
+        logging.info("Reboot detected. Stopping serial connection.")
+        break
 
 
 def write_to_serial(ser: serial.Serial, text: bytes, sleep: float = 0) -> str:
