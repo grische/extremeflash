@@ -1,0 +1,13 @@
+setenv ipaddr 192.168.1.254
+setenv netmask 255.255.255.0
+setenv serverip 192.168.1.70
+setenv gatewayip 192.168.1.70
+tftpboot 0x2000000 192.168.1.70:openwrt-initramfs.bin
+interrupts off
+bootm start 0x2000000
+bootm loados
+fdt resize
+fdt boardsetup
+fdt chosen
+bootm prep
+bootm go

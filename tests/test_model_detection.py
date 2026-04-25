@@ -1,12 +1,8 @@
-"""Unit tests for U-Boot `printenv`-based model detection.
-
-Test file uses a neutral name so it survives the PR 2 rename
-(`get_model_name_from_printenv` -> `get_model_from_printenv`).
-"""
+"""Unit tests for U-Boot `printenv`-based model detection."""
 
 import pytest
 
-from extremeflash.ws import get_model_name_from_printenv
+from extremeflash.models import get_model_from_printenv
 
 
 def _printenv(model_name: str) -> str:
@@ -14,7 +10,7 @@ def _printenv(model_name: str) -> str:
 
 
 @pytest.mark.parametrize(
-    "model_name,expected",
+    "model_name,expected_name",
     [
         ("AP3710i", "AP3710"),
         ("AP3715i", "AP3715"),
@@ -25,15 +21,15 @@ def _printenv(model_name: str) -> str:
         ("AP3935i-ROW", "AP3935"),
     ],
 )
-def test_recognizes_supported_models(model_name, expected):
-    assert get_model_name_from_printenv(_printenv(model_name)) == expected
+def test_recognizes_supported_models(model_name, expected_name):
+    assert get_model_from_printenv(_printenv(model_name)).name == expected_name
 
 
 def test_missing_model_raises():
     with pytest.raises(RuntimeWarning, match="no MODEL name"):
-        get_model_name_from_printenv("foo=bar\r\nbaz=qux\r\n")
+        get_model_from_printenv("foo=bar\r\nbaz=qux\r\n")
 
 
 def test_unknown_model_raises():
     with pytest.raises(RuntimeWarning, match="Unexpected Model"):
-        get_model_name_from_printenv(_printenv("AP9999z"))
+        get_model_from_printenv(_printenv("AP9999z"))
