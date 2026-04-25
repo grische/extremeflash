@@ -141,7 +141,7 @@ class FlashSession:
             bootup_interrupt(ser, self.cancel)
             bootup_login(ser, self.cancel)
             bootup_login_verification(ser, self.cancel)
-            model = bootup_set_boot_openwrt(ser, self.dryrun)
+            model = bootup_set_boot_openwrt(ser, self.cancel, self.dryrun)
             boot_via_tftp(
                 ser, self.local_ip_interface, self.initramfs_path.name, self.ap_ip_interface, model, self.cancel
             )

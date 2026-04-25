@@ -28,19 +28,25 @@ import serial
 
 from .exceptions import FlashError
 from .helpers import (
-    debug_serial,
     is_kernel_booting,
     write_to_serial,
 )
 from .models import ApModel, get_model_from_printenv
-from .serial_console import read_until
+from .serial_console import read_until, read_until_prompt
 
 
-def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> ApModel:
+def bootup_set_boot_openwrt(ser: serial.Serial, cancel: Event, dryrun: bool = False) -> ApModel:
+    """Read U-Boot env via `printenv`, set `boot_openwrt`/`bootcmd` if needed,
+    persist with `saveenv`. Detects model from `printenv` output."""
     ser.write(b"printenv\n")
-    time.sleep(1)
-    printenv_return = ser.read(ser.in_waiting).decode("ascii")
-    debug_serial(printenv_return)
+    # Read printenv output until the U-Boot prompt (no trailing newline) closes
+    # the response. Use read_until_prompt because the prompt has no \r\n.
+    _matched_prompt, printenv_return = read_until_prompt(
+        ser,
+        prompts=["Boot (PRI)->", "Boot (BAK)->"],
+        cancel=cancel,
+        timeout=10,
+    )
     model = get_model_from_printenv(printenv_return)
 
     if "boot_openwrt" in printenv_return:
@@ -71,19 +77,22 @@ def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> ApModel
         return model
 
     ser.write(b"saveenv\n")
-    time.sleep(model.saveenv_wait_seconds)
-
-    saveenv_return = ser.read(ser.in_waiting).decode("ascii")
-    debug_serial(saveenv_return)
-
-    save_env_success = False
-
-    for msg in ["Writing to Flash", "Writing to NAND", "Writing to redundant NAND"]:
-        if msg in saveenv_return:
-            save_env_success = True
-            break
-    if not save_env_success:
-        raise RuntimeError("saveenv did not successfully write to flash")
+    # Wait for one of the three "Writing to ..." success markers. Timeout =
+    # 2 * saveenv_wait_seconds (4 s for normal models, 12 s for AP3715 SPI flash);
+    # missing match raises the same RuntimeError the pre-PR-4b code used.
+    try:
+        read_until(
+            ser,
+            predicates={
+                "flash": lambda line: "Writing to Flash" in line,
+                "nand": lambda line: "Writing to NAND" in line,
+                "rnand": lambda line: "Writing to redundant NAND" in line,
+            },
+            cancel=cancel,
+            timeout=2 * model.saveenv_wait_seconds,
+        )
+    except TimeoutError as exc:
+        raise RuntimeError("saveenv did not successfully write to flash") from exc
 
     return model
 

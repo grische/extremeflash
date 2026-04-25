@@ -27,7 +27,7 @@ import paramiko
 import scp
 import serial
 
-from .serial_console import read_until
+from .serial_console import read_until, read_until_prompt
 
 if TYPE_CHECKING:
     from .flash_session import FlashSession
@@ -113,27 +113,25 @@ def bootup_login(ser: serial.Serial, cancel: Event):
 
 
 def bootup_login_verification(ser: serial.Serial, cancel: Event):
-    prompt_string = "Boot (PRI)->"
-    prompt_string_backup = "Boot (BAK)->"
-    # The assertion ensures that both prompt strings have the same length, which is crucial
-    # for the buffer reading logic in the loop below. If the strings had different lengths,
-    # the code might not read enough bytes from the buffer to recognize either prompt or
-    # might not receive enough bytes to ever continue.
-    assert len(prompt_string_backup) == len(prompt_string)
-    # Reading byte by byte because there is no linebreak after the prompt
-    while not cancel.is_set():
-        # only read chars if there are enough bytes in wait from the buffer
-        if ser.in_waiting > len(prompt_string):
-            chars = ser.read(ser.in_waiting).decode("ascii")
-            debug_serial(chars)
+    """Wait for the U-Boot prompt confirming login succeeded.
 
-            if prompt_string in chars or prompt_string_backup in chars:
-                logging.info("U-Boot login successful!")
-                break
+    Behavior change vs pre-PR-4b: this is now an *accumulating* substring match
+    over the read buffer rather than a one-shot read-then-raise. A device that
+    emits noise before the prompt now succeeds where it previously raised
+    RuntimeError("U-Boot login failed :(("). The relaxation is deliberate (the
+    one-shot behavior was a fragility, not a feature). See `read_until_prompt`'s
+    docstring for the full rationale.
 
-            raise RuntimeError("U-Boot login failed :((")
-
-        time.sleep(0.01)
+    Timeout: 30 s — login response should arrive within seconds; 30 s is generous
+    headroom over real-world latency.
+    """
+    read_until_prompt(
+        ser,
+        prompts=["Boot (PRI)->", "Boot (BAK)->"],
+        cancel=cancel,
+        timeout=30,
+    )
+    logging.info("U-Boot login successful!")
 
 
 def is_kernel_booting(line):
