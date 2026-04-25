@@ -18,15 +18,18 @@
 
 import ipaddress
 import logging
+import socket
 import time
 from threading import Event
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import paramiko
 import scp
 import serial
 
-DRYRUN = False
+if TYPE_CHECKING:
+    from .flash_session import FlashSession
+
 #
 #  What this tool actually does
 #
@@ -40,29 +43,19 @@ DRYRUN = False
 #    initiated and then terminate.
 # 5. In the meanwhile the main programm will wait for SSH and Serial threads to terminate and then stop the TFTP server
 #
-# Main Thread: .....................................................................................................
-# |  |  |                                                                                           (join) /     |  \
-# \  \  \_ SSH Thread: halt ....................................... resume: upload file + flash it + terminate   |   \
-#  \  \                                                        (event) /                                 (join) /     \
-#   \  \_ Serial Thread: Interrupt U-Boot .. Boot TFTP .. Wait for br-lan .. Wait for flash + reboot .. terminate      |
-#    \                                                                                                          (stop) |
-#     \_ TFTP Server Thread: ................................................................................. terminate
-
-
-# TODO: these global events might need a better location
-event_keep_serial_active = Event()
-event_abort_ssh = Event()
-event_ssh_ready = Event()
+# Cancellation: each helper that polls in a loop accepts a `cancel: threading.Event`
+# parameter. Setting `cancel` makes the loops fall out at their next check; the
+# session's `cancel_run()` is the canonical way to set it.
 
 
 def debug_serial(string: str):
     logging.debug(string.rstrip())
 
 
-def bootup_interrupt(ser: serial.Serial):
+def bootup_interrupt(ser: serial.Serial, cancel: Event):
     bootlog_buffer = ""
 
-    while event_keep_serial_active.is_set():
+    while not cancel.is_set():
         time.sleep(0.01)
         if ser.in_waiting == 0:
             continue
@@ -89,8 +82,8 @@ def bootup_interrupt(ser: serial.Serial):
             break
 
 
-def bootup_login(ser: serial.Serial):
-    while event_keep_serial_active.is_set():
+def bootup_login(ser: serial.Serial, cancel: Event):
+    while not cancel.is_set():
         line = readline_from_serial(ser)
 
         if "[30s timeout]" in line:
@@ -107,7 +100,7 @@ def bootup_login(ser: serial.Serial):
         time.sleep(0.01)
 
 
-def bootup_login_verification(ser: serial.Serial):
+def bootup_login_verification(ser: serial.Serial, cancel: Event):
     prompt_string = "Boot (PRI)->"
     prompt_string_backup = "Boot (BAK)->"
     # The assertion ensures that both prompt strings have the same length, which is crucial
@@ -116,7 +109,7 @@ def bootup_login_verification(ser: serial.Serial):
     # might not receive enough bytes to ever continue.
     assert len(prompt_string_backup) == len(prompt_string)
     # Reading byte by byte because there is no linebreak after the prompt
-    while event_keep_serial_active.is_set():
+    while not cancel.is_set():
         # only read chars if there are enough bytes in wait from the buffer
         if ser.in_waiting > len(prompt_string):
             chars = ser.read(ser.in_waiting).decode("ascii")
@@ -149,12 +142,12 @@ def is_kernel_booting(line):
     return False
 
 
-def boot_wait_for_brlan(ser: serial.Serial):
+def boot_wait_for_brlan(ser: serial.Serial, cancel: Event):
     # The "eth0: Link is Up" comes up, then goes down again and then comes up again
     # It seems that the second "up" happens after eth0 has entered promiscuous mode
     # and after the bridge has been created
 
-    while event_keep_serial_active.is_set():
+    while not cancel.is_set():
         line = readline_from_serial(ser)
 
         if "br-lan: link becomes ready" in line or (  # OpenWRT 22.10 and earlier
@@ -178,8 +171,8 @@ def boot_set_ips(ser, new_ap_ip):
     time.sleep(0.5)
 
 
-def keep_logging_until_reboot(ser: serial.Serial):
-    while event_keep_serial_active.is_set():
+def keep_logging_until_reboot(ser: serial.Serial, cancel: Event):
+    while not cancel.is_set():
         if ser.in_waiting > 5:
             line = readline_from_serial(ser)
             if "Upgrade completed" in line:
@@ -215,15 +208,29 @@ def readline_from_serial(ser: serial.Serial) -> str:
     return line
 
 
-def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = "192.168.1.1", dryrun: bool = False):
+def run_ssh_flash(session: "FlashSession", sysupgrade_firmware_path: str, ap_ip: str) -> None:
+    """Wait for the serial thread's ready signal, then upload sysupgrade.bin via SCP and run it.
+
+    Cancel coverage: only the TCP-connect phase is cancellable (via socket.create_connection's
+    timeout). Once the socket is handed to paramiko, transport.connect()/auth_none()/scp.put()
+    are blocking calls without paramiko-side cancel hooks; they will complete or fail naturally.
+    Acceptable for v1 because the daemon-flag normalization (FlashSession's threads are
+    daemon=True) means interpreter exit doesn't wedge on these.
+    """
     logging.info("SSH waiting for ready signal.")
-    event_ssh_ready.wait()
-    if event_abort_ssh.is_set():
+    session.ssh_ready.wait()
+    if session.ssh_abort.is_set():
         return
     logging.info("SSH Starting")
-    with paramiko.Transport(ap_ip) as transport:
+
+    sock = socket.create_connection((ap_ip, 22), timeout=session.ssh_connect_timeout)
+    with paramiko.Transport(sock) as transport:
+        transport.banner_timeout = session.ssh_banner_timeout
         transport.connect()  # ignoring all security
         transport.auth_none("root")  # password-less login
+
+        if session.ssh_abort.is_set():
+            return
 
         firmware_target_path = "/tmp/firmware.bin"
 
@@ -231,9 +238,12 @@ def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = "192.168.1.1", dryrun:
         with scp.SCPClient(transport) as scp_client:
             scp_client.put(sysupgrade_firmware_path, firmware_target_path)
 
+        if session.ssh_abort.is_set():
+            return
+
         with transport.open_session() as chan:
             sysupgrade_command = "sysupgrade -n " + firmware_target_path
-            if dryrun:
+            if session.dryrun:
                 logging.info("dryrun: running sysupgrade with test and rebooting")
                 sysupgrade_command = sysupgrade_command.replace("sysupgrade", "sysupgrade --test")
                 sysupgrade_command = sysupgrade_command + " && reboot"
@@ -251,20 +261,6 @@ def start_ssh(sysupgrade_firmware_path: str, ap_ip: str = "192.168.1.1", dryrun:
             if "Commencing upgrade" in sysupgrade_stderr:
                 logging.info("Flashing in progress...")
         logging.debug("Closing SSH session.")
-
-
-def post_cleanup(tftp_server, ssh_thread, serial_thread):
-    if ssh_thread and ssh_thread.is_alive():
-        logging.info("Stopping SSH thread")
-        event_abort_ssh.set()
-        event_ssh_ready.set()
-    if serial_thread and serial_thread.is_alive():
-        logging.info("Stopping Serial thread")
-        event_keep_serial_active.clear()
-
-    if tftp_server and tftp_server.is_alive():
-        logging.debug("Stopping TFTP server.")
-        tftp_server.stop()  # set now=True to force shutdown
 
 
 def setting_up_ips(local_ip: str, ap_ip_str: Optional[str] = None):

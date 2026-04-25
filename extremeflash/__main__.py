@@ -6,11 +6,13 @@ import logging
 
 import serial
 
-from .ws import main
+from .flash_session import main
 
 
 def test_serial_port(potential_serial_port):
-    serial.Serial(port=potential_serial_port, baudrate=115200, timeout=5)
+    # Use `with` so the probe-open closes its file descriptor immediately.
+    with serial.Serial(port=potential_serial_port, baudrate=115200, timeout=5):
+        pass
     return potential_serial_port
 
 

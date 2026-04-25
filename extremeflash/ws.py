@@ -19,34 +19,21 @@
 
 import ipaddress
 import logging
-import os
-import pathlib
 import re
 import time
-from threading import Thread
-from typing import Optional, Union
+from threading import Event
+from typing import Union
 
 import serial
 
+from .exceptions import FlashError
 from .helpers import (
-    boot_set_ips,
-    boot_wait_for_brlan,
-    bootup_interrupt,
-    bootup_login,
-    bootup_login_verification,
     debug_serial,
-    event_keep_serial_active,
-    event_ssh_ready,
     is_kernel_booting,
-    keep_logging_until_reboot,
-    post_cleanup,
     readline_from_serial,
-    setting_up_ips,
-    start_ssh,
     write_to_serial,
 )
 from .models import ApModel, get_model_from_printenv
-from .tftp_server import TftpServer
 
 
 def bootup_set_boot_openwrt(ser: serial.Serial, dryrun: bool = False) -> ApModel:
@@ -107,6 +94,7 @@ def boot_via_tftp(
     tftp_file: str,
     new_ap_ip: Union[ipaddress.IPv4Interface, ipaddress.IPv6Interface],
     model: ApModel,
+    cancel: Event,
 ):
     new_ap_ip_str = str(new_ap_ip.ip).encode("ascii")
     new_ap_netmask_str = str(new_ap_ip.netmask).encode("ascii")
@@ -123,7 +111,7 @@ def boot_via_tftp(
     )
 
     # wait until TFTP transfer is complete
-    while event_keep_serial_active.is_set():
+    while not cancel.is_set():
         line = readline_from_serial(ser)
 
         if "Bytes transferred" in line:
@@ -136,10 +124,10 @@ def boot_via_tftp(
     logging.info("Starting TFTP Boot.")
 
 
-def wait_for_ramboot(ser: serial.Serial):
+def wait_for_ramboot(ser: serial.Serial, cancel: Event):
     max_retries = 2
     cur_retries = 0
-    while event_keep_serial_active.is_set():
+    while not cancel.is_set():
         line = readline_from_serial(ser)
 
         if "Retry count exceeded" in line:  # TFTP boot failed
@@ -157,82 +145,12 @@ def wait_for_ramboot(ser: serial.Serial):
 
         elif "ERROR: can't get kernel image!" in line:
             # https://github.com/u-boot/u-boot/blob/8c39999acb726ef083d3d5de12f20318ee0e5070/boot/bootm.c#L123
-            logging.error("Unable to boot initramfs file. Check you provided the correct file. Aborting.")
-
-            # pylint: disable=protected-access
-            os._exit(1)
+            # Raise instead of os._exit so FlashSession's run() finally block runs cleanly:
+            # cleanup tears down the TFTP server, closes the paramiko log, and joins ssh_thread.
+            raise FlashError("Unable to boot initramfs file. Check you provided the correct file. Aborting.")
 
         elif is_kernel_booting(line):
             logging.info("Booting Linux kernel in RAM")
             break
 
         time.sleep(0.01)
-
-
-def start_tftp_boot_via_serial(
-    name: str,
-    tftp_ip: Union[ipaddress.IPv4Interface, ipaddress.IPv6Interface],
-    tftp_file: str,
-    new_ap_ip: Union[ipaddress.IPv4Interface, ipaddress.IPv6Interface],
-    dryrun: bool = False,
-):
-    with serial.Serial(port=name, baudrate=115200, timeout=30) as ser:
-        logging.info(f"Starting to connect to serial port {ser.name}")
-        event_keep_serial_active.set()
-
-        bootup_interrupt(ser)
-        bootup_login(ser)
-        bootup_login_verification(ser)
-        model = bootup_set_boot_openwrt(ser, dryrun)
-        boot_via_tftp(ser, tftp_ip, tftp_file, new_ap_ip, model)
-        wait_for_ramboot(ser)
-        boot_wait_for_brlan(ser)
-        boot_set_ips(ser, new_ap_ip)
-        event_ssh_ready.set()
-        keep_logging_until_reboot(ser)
-
-
-def main(
-    serial_port: str,
-    initramfs_path_str: str,
-    sysupgrade_path_str: str,
-    local_ip: str,
-    ap_ip: Optional[str] = None,
-    dryrun: bool = False,
-):
-    ap_ip_interface, local_ip_interface = setting_up_ips(local_ip, ap_ip)
-
-    initramfs_path = pathlib.Path(initramfs_path_str)
-    sysupgrade_path = pathlib.Path(sysupgrade_path_str)
-
-    tftp_server = TftpServer(initramfs_path_str, listenip=str(local_ip_interface.ip))
-    tftp_server.start()
-    serial_thread = None
-    ssh_thread = None
-    try:
-        serial_thread = Thread(
-            target=start_tftp_boot_via_serial,
-            args=[serial_port, local_ip_interface, initramfs_path.name, ap_ip_interface, dryrun],
-            daemon=True,
-        )
-        ssh_thread = Thread(target=start_ssh, args=[sysupgrade_path, str(ap_ip_interface.ip), dryrun])
-        logging.debug("Starting serial thread")
-        serial_thread.start()
-        logging.debug("Starting ssh thread")
-        ssh_thread.start()
-
-        logging.debug("Waiting for ssh thread")
-        # Strange workaround to allow ctrl+c or system stop events during a join()
-        while ssh_thread.is_alive():
-            ssh_thread.join(5)  # wait for SSH to conclude its actions
-
-        logging.debug("Waiting for serial thread")
-        # Strange workaround to allow ctrl+c or system stop events during a join()
-        while serial_thread.is_alive():
-            serial_thread.join(5)
-
-        logging.info("All steps finished. Give the AP some time to reboot and then access it on http://192.168.1.1")
-    except (KeyboardInterrupt, SystemExit, SystemError):
-        logging.warning("Aborting main process")
-    finally:
-        post_cleanup(tftp_server, ssh_thread, serial_thread)

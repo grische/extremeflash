@@ -34,10 +34,24 @@ class TftpServer:
     def is_alive(self) -> bool:
         return self.tftp_thread.is_alive() if self.tftp_thread is not None else False
 
-    def stop(self):
+    def stop(self, now: bool = False):
+        """Stop the TFTP server.
+
+        With `now=False` (default) tftpy waits for in-flight transfer threads to
+        finish their current select-loop tick. With `now=True` the listening
+        socket is closed immediately; in-flight transfers still take up to ~5 s
+        to exit on their next select-tick (tftpy upstream behavior).
+        """
         if self.is_alive():
-            self.tftp_server.stop()
+            self.tftp_server.stop(now=now)
+
+    def __enter__(self) -> "TftpServer":
+        self.start()
+        return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.stop()
+        # Always force-close (now=True) on exit:
+        # - success path: no in-flight transfer; harmless
+        # - failure path: a stuck retry might be mid-transfer; force the listening socket closed
+        self.stop(now=True)
         self.tmpdir.cleanup()

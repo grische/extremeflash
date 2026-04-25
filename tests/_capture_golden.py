@@ -17,11 +17,11 @@ PR 2 fixes that latent bug; the new AP3715 sequence is asserted directly in
 """
 
 import ipaddress
+import threading
 import time
 from pathlib import Path
 from unittest.mock import patch
 
-from extremeflash.helpers import event_keep_serial_active
 from extremeflash.models import SUPPORTED_MODELS, ApModel
 from extremeflash.ws import boot_via_tftp
 
@@ -43,13 +43,10 @@ def capture_for_model(model: ApModel) -> bytes:
         fake.inject(placeholder)
     tftp_ip = ipaddress.ip_interface("192.168.1.70/24")
     new_ap_ip = ipaddress.ip_interface("192.168.1.254/24")
-    event_keep_serial_active.set()
-    try:
-        # Skip real-world sleeps to keep capture fast.
-        with patch.object(time, "sleep", lambda *_args, **_kwargs: None):
-            boot_via_tftp(fake, tftp_ip, "openwrt-initramfs.bin", new_ap_ip, model)
-    finally:
-        event_keep_serial_active.clear()
+    cancel = threading.Event()  # never set; loop terminates on "Bytes transferred"
+    # Skip real-world sleeps to keep capture fast.
+    with patch.object(time, "sleep", lambda *_args, **_kwargs: None):
+        boot_via_tftp(fake, tftp_ip, "openwrt-initramfs.bin", new_ap_ip, model, cancel)
     return b"".join(fake.writes)
 
 
