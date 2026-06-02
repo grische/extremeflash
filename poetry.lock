@@ -614,14 +614,14 @@ paramiko = "*"
 
 [[package]]
 name = "tftpy"
-version = "0.8.5"
+version = "0.8.7"
 description = "A TFTP protocol library for Python"
 optional = false
-python-versions = ">=3.6"
+python-versions = ">=3.8"
 groups = ["main"]
 files = [
-    {file = "tftpy-0.8.5-py3-none-any.whl", hash = "sha256:435fdf5cc00a1439e698711b1390917b634c84addef581c63e6f743c7b370c28"},
-    {file = "tftpy-0.8.5.tar.gz", hash = "sha256:dd38e3744530d0c30fa1c715d7fa454319bc8d399bb40c05839cc771f05d0e6c"},
+    {file = "tftpy-0.8.7-py3-none-any.whl", hash = "sha256:59289b269ed6e0a7c8762301f99b56814026758b3137a90c9c3e677881efc853"},
+    {file = "tftpy-0.8.7.tar.gz", hash = "sha256:e8a5aa092dab2e1cbb9b94392036827b808dc37eb6cf1b1ab33c81957b3f5fe2"},
 ]
 
 [[package]]
@@ -680,4 +680,4 @@ markers = {main = "python_version < \"3.11\""}
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9.2,<4"
-content-hash = "57af650abb38e23bc06c1d7c32bc26e1461b38c05c9e2e4e89c84bb7faa1412c"
+content-hash = "6348706711818c2c8f0df57b51db7289b8dfd46bd33512baba8ed264d9880607"

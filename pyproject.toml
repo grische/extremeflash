@@ -10,7 +10,7 @@ authors = [
 requires-python = '>=3.9.2,<4'
 dependencies = [
     'pyserial>=3.5,<4.0',
-    'tftpy>=0.8.2,<0.9.0',
+    'tftpy>=0.8.7,<0.9.0',
     'paramiko>3,<4',
     'scp>=0.14.5,<0.16.0',
 ]
