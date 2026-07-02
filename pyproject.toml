@@ -32,7 +32,7 @@ packages = [{ include = "extremeflash" }]
 mypy = "^1.19.1"
 pylint = "^3.3.9"
 types-paramiko = ">3,<4"
-ruff = "^0.15.8"
+ruff = "^0.15.20"
 
 [build-system]
 requires = ['poetry-core>=2.0']
